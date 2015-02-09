@@ -1,0 +1,9 @@
+{
+  "name": "encrypted-content-encoding",
+  "version": "0.1.0",
+  "main": "./ece.js",
+  "scripts": { "test": "node ./test.js" },
+  "depedencies": {
+    "urlsafe-base64": "~1.0.0"
+  }
+}
