@@ -29,8 +29,8 @@ function deriveKey(params) {
   var secret;
   if (params.key) {
     secret = base64.decode(params.key);
-  } else if (params['p256-dh']) { // receiver/decrypt
-    var share = base64.decode(params['p256-dh']);
+  } else if (params.ecdh) { // receiver/decrypt
+    var share = base64.decode(params.ecdh);
     var key = savedKeys[params.keyid];
     secret = key.computeSecret(share);
   } else if (params.keyid) {

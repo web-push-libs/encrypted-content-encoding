@@ -5,14 +5,20 @@ var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
+var count = parseInt(process.argv[2], 10) || 20;
+// var log = console.log.bind(console);
+var log = function() {};
+
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
+  log("Nonce: " + base64.encode(encryptParams.nonce));
   var input = crypto.randomBytes(length);
-  // console.log("Input: " + input.toString('hex'));
+  // var input = new Buffer('I am the walrus');
+  log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, encryptParams);
-  // console.log("Encrypted: " + encrypted.toString('hex'));
+  log("Encrypted: " + base64.encode(encrypted));
   var decrypted = ece.decrypt(encrypted, decryptParams);
-  // console.log("Decrypted: " + decrypted.toString('hex'));
+  log("Decrypted: " + base64.encode(decrypted));
   assert.equal(Buffer.compare(input, decrypted), 0);
 }
 
@@ -23,6 +29,7 @@ function useExplicitKey() {
     nonce: base64.encode(crypto.randomBytes(16)),
     bs: length.readUInt16BE(0) + 1
   };
+  log('Key: ' + base64.encode(params.key));
   encryptDecrypt(length.readUInt16BE(2), params);
 }
 
@@ -47,6 +54,9 @@ function useDH() {
   var staticKeyId = staticKey.getPublicKey().toString('hex')
   ece.saveKey(staticKeyId, staticKey);
 
+  log("Receiver private: " + base64.encode(staticKey.getPrivateKey()));
+  log("Receiver public: " + base64.encode(staticKey.getPublicKey()));
+
   // the ephemeral key is used by the sender
   var ephemeralKey = crypto.createECDH('prime256v1');
   ephemeralKey.generateKeys();
@@ -54,16 +64,19 @@ function useDH() {
   var ephemeralKeyId = ephemeralKey.getPublicKey().toString('hex');
   ece.saveKey(ephemeralKeyId, ephemeralKey);
 
+  log("Sender private: " + base64.encode(ephemeralKey.getPrivateKey()));
+  log("Sender public: " + base64.encode(ephemeralKey.getPublicKey()));
+
   var length = crypto.randomBytes(4);
   var encryptParams = {
     keyid: ephemeralKeyId,
-    "p256-dh": base64.encode(staticKey.getPublicKey()),
+    ecdh: base64.encode(staticKey.getPublicKey()),
     nonce: base64.encode(crypto.randomBytes(16)),
     bs: length.readUInt16BE(0) + 1
   };
   var decryptParams = {
     keyid: staticKeyId,
-    "p256-dh": base64.encode(ephemeralKey.getPublicKey()),
+    ecdh: base64.encode(ephemeralKey.getPublicKey()),
     nonce: encryptParams.nonce,
     bs: encryptParams.bs
   };
@@ -71,15 +84,15 @@ function useDH() {
 }
 
 var i;
-for (i = 0; i < 10; ++i) {
+for (i = 0; i < count; ++i) {
   useExplicitKey();
 }
 
-for (i = 0; i < 10; ++i) {
+for (i = 0; i < count; ++i) {
   useKeyId();
 }
 
-for (i = 0; i < 10; ++i) {
+for (i = 0; i < count; ++i) {
   useDH();
 }
 console.log('OK');
