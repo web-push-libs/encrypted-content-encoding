@@ -47,12 +47,12 @@ function deriveKey(params) {
   return tlsPRF(secret, "encrypted Content-Encoding", nonce, 16);
 }
 
-function determineBlockSize(params) {
-  var bs = parseInt(params.bs, 10);
-  if (isNaN(bs)) {
+function determineRecordSize(params) {
+  var rs = parseInt(params.rs, 10);
+  if (isNaN(rs)) {
     return 4096;
   }
-  return bs;
+  return rs;
 }
 
 var aad_;
@@ -111,12 +111,12 @@ function decryptBlock(key, counter, buffer) {
  */
 function decrypt(buffer, params) {
   var key = deriveKey(params);
-  var bs = determineBlockSize(params);
+  var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
 
   for (var i = 0; start < buffer.length; ++i) {
-    var end = Math.min(start + bs + TAG_LENGTH, buffer.length);
+    var end = Math.min(start + rs + TAG_LENGTH, buffer.length);
     if (end - start <= TAG_LENGTH) {
       throw new Error('Invalid block: too small at ' + i);
     }
@@ -152,12 +152,12 @@ function encryptBlock(key, counter, buffer, pad) {
  */
 function encrypt(buffer, params) {
   var key = deriveKey(params);
-  var bs = determineBlockSize(params);
+  var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
 
   for (var i = 0; start < buffer.length; ++i) {
-    var end = Math.min(start + bs - 1, buffer.length);
+    var end = Math.min(start + rs - 1, buffer.length);
     var block = encryptBlock(key, i, buffer.slice(start, end));
     result = Buffer.concat([result, block]);
     start = end;
