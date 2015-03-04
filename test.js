@@ -11,7 +11,7 @@ var log = function() {};
 
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
-  log("Nonce: " + base64.encode(encryptParams.nonce));
+  log("Nonce: " + base64.encode(encryptParams.salt));
   var input = crypto.randomBytes(length);
   // var input = new Buffer('I am the walrus');
   log("Input: " + base64.encode(input));
@@ -26,8 +26,8 @@ function useExplicitKey() {
   var length = crypto.randomBytes(4);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
-    nonce: base64.encode(crypto.randomBytes(16)),
-    bs: length.readUInt16BE(0) + 1
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length.readUInt16BE(0) + 1
   };
   log('Key: ' + base64.encode(params.key));
   encryptDecrypt(length.readUInt16BE(2), params);
@@ -40,8 +40,8 @@ function useKeyId() {
   ece.saveKey(keyid, key);
   var params = {
     keyid: keyid,
-    nonce: base64.encode(crypto.randomBytes(16)),
-    bs: length.readUInt16BE(0) + 1
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length.readUInt16BE(0) + 1
   };
   encryptDecrypt(length.readUInt16BE(2), params);
 }
@@ -70,15 +70,15 @@ function useDH() {
   var length = crypto.randomBytes(4);
   var encryptParams = {
     keyid: ephemeralKeyId,
-    ecdh: base64.encode(staticKey.getPublicKey()),
-    nonce: base64.encode(crypto.randomBytes(16)),
-    bs: length.readUInt16BE(0) + 1
+    dh: base64.encode(staticKey.getPublicKey()),
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length.readUInt16BE(0) + 1
   };
   var decryptParams = {
     keyid: staticKeyId,
-    ecdh: base64.encode(ephemeralKey.getPublicKey()),
-    nonce: encryptParams.nonce,
-    bs: encryptParams.bs
+    dh: base64.encode(ephemeralKey.getPublicKey()),
+    salt: encryptParams.nonce,
+    rs: encryptParams.rs
   };
   encryptDecrypt(length.readUInt16BE(2), encryptParams, decryptParams);
 }

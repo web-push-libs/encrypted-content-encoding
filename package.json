@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "main": "./ece.js",
   "scripts": { "test": "node ./test.js" },
-  "depedencies": {
+  "engines" : { "node" : ">=0.12" },
+  "dependencies": {
     "urlsafe-base64": "~1.0.0"
   }
 }

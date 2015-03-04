@@ -6,29 +6,40 @@ var base64 = require('urlsafe-base64');
 var savedKeys = {};
 var AES_GCM = 'id-aes128-GCM';
 var TAG_LENGTH = 16;
+var KEY_LENGTH = 16;
+var IV_LENGTH = 12;
 
-function HMAC_hash(secret, data) {
-  var hmac = crypto.createHmac('sha256', secret);
-  hmac.update(data);
+function HMAC_hash(key, input) {
+  var hmac = crypto.createHmac('sha256', input);
+  hmac.update(input);
   return hmac.digest();
 }
 
-function tlsPRF(secret, label, seed, bytes) {
-  seed = Buffer.concat([new Buffer(label, 'ascii'), seed]);
-  var a = seed;
+/* HKDF as defined in RFC5869, using SHA-256 */
+function HKDF(salt, ikm, info, l) {
+  var prk = HMAC_hash(salt, ikm);
+
   var output = new Buffer(0);
-  while (output.length < bytes) {
-    a = HMAC_hash(secret, a);
-    var stage = HMAC_hash(secret, Buffer.concat([a, seed]));
-    output = Buffer.concat([output, stage]);
+  var T = new Buffer(0);
+  info = new Buffer(info, 'ascii');
+  var counter = 0;
+  var cbuf = new Buffer(1);
+  while (output.length < l) {
+    cbuf.writeUIntBE(++counter, 0, 1);
+    T = HMAC_hash(prk, Buffer.concat([T, info, cbuf]));
+    output = Buffer.concat([output, T]);
   }
-  return output.slice(0, bytes);
+
+  return output.slice(0, l);
 }
 
 function deriveKey(params) {
   var secret;
   if (params.key) {
     secret = base64.decode(params.key);
+    if (secret.length !== KEY_LENGTH) {
+      throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
+    }
   } else if (params.ecdh) { // receiver/decrypt
     var share = base64.decode(params.ecdh);
     var key = savedKeys[params.keyid];
@@ -39,12 +50,15 @@ function deriveKey(params) {
   if (!secret) {
     throw new Error('Unable to determine key');
   }
-  if (!params.nonce) {
-    throw new Error('A nonce is required');
+  if (!params.salt) {
+    throw new Error('A salt is required');
   }
 
-  var nonce = base64.decode(params.nonce);
-  return tlsPRF(secret, "encrypted Content-Encoding", nonce, 16);
+  var salt = base64.decode(params.salt);
+  if (salt.length !== KEY_LENGTH) {
+    throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
+  }
+  return HKDF(salt, secret, "Content-Encoding: aesgcm128", KEY_LENGTH);
 }
 
 function determineRecordSize(params) {
@@ -52,36 +66,26 @@ function determineRecordSize(params) {
   if (isNaN(rs)) {
     return 4096;
   }
-  return rs;
-}
-
-var aad_;
-var context_ = new Buffer('Content-Encoding: aesgcm-128', 'ascii');
-function generateAAD(counter) {
-  if (!aad_) {
-    aad_ = new Buffer(context_.length + 9); // one zero byte, 64-bit counter
-    context_.copy(aad_, 0);
-    aad_.writeUInt8(0, context_.length);
-    aad_.writeUInt32BE(0, context_.length + 1);
+  if (rs <= 1) {
+    throw new Error('The rs parameter has to be greater than 1');
   }
-  aad_.writeUInt32BE(counter, context_.length + 5);
-  return aad_;
+  return rs;
 }
 
 var iv_;
 function generateIV(counter) {
   if (!iv_) {
-    iv_ = new Buffer(12);
+    iv_ = new Buffer(IV_LENGTH);
     iv_.fill(0);
   }
-  iv_.writeUInt32BE(counter, iv_.length - 4);
+  iv_.writeUIntBE(counter, iv_.length - 6, 6);
   return iv_;
 }
 
 function decryptBlock(key, counter, buffer) {
   var iv = generateIV(counter);
   var gcm = crypto.createDecipheriv(AES_GCM, key, iv);
-  gcm.setAAD(generateAAD(counter));
+  gcm.setAAD(new Buffer(0));
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
@@ -97,8 +101,7 @@ function decryptBlock(key, counter, buffer) {
   return data.slice(1 + pad);
 }
 
-// TODO: this really should use the node streams stuff, but I'm more interested
-// in working code for now.
+// TODO: this really should use the node streams stuff
 
 /**
  * Decrypt some bytes.  This uses the parameters to determine the key and block
@@ -131,9 +134,9 @@ function encryptBlock(key, counter, buffer, pad) {
   pad = pad || 0;
   var iv = generateIV(counter);
   var gcm = crypto.createCipheriv(AES_GCM, key, iv);
-  gcm.setAAD(generateAAD(counter));
+  gcm.setAAD(new Buffer(0));
   var padding = new Buffer(pad + 1);
-  padding.writeUInt8(pad, 0);
+  padding.writeUIntBE(pad, 0, 1);
   var epadding = gcm.update(padding);
   var ebuffer = gcm.update(buffer);
   gcm.final();
