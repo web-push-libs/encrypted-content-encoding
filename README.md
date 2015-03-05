@@ -12,7 +12,7 @@ var base64 = require('base64url');
 
 var parameters = {
   key: base64.encode(crypto.randomBytes(16)),
-  nonce: base64.encode(crypto.randomBytes(16))
+  salt: base64.encode(crypto.randomBytes(16))
 };
 var encrypted = ece.encrypt(data, parameters);
 
