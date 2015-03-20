@@ -10,7 +10,7 @@ var KEY_LENGTH = 16;
 var IV_LENGTH = 12;
 
 function HMAC_hash(key, input) {
-  var hmac = crypto.createHmac('sha256', input);
+  var hmac = crypto.createHmac('sha256', key);
   hmac.update(input);
   return hmac.digest();
 }
