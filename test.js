@@ -6,12 +6,16 @@ var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
 var count = parseInt(process.argv[2], 10) || 20;
-// var log = console.log.bind(console);
-var log = function() {};
+var log;
+if (process.argv.length >= 3) {
+  log = console.log.bind(console);
+} else {
+  log = function() {};
+}
 
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
-  log("Nonce: " + base64.encode(encryptParams.salt));
+  log("Salt: " + base64.encode(encryptParams.salt));
   var input = crypto.randomBytes(length);
   // var input = new Buffer('I am the walrus');
   log("Input: " + base64.encode(input));
@@ -77,7 +81,7 @@ function useDH() {
   var decryptParams = {
     keyid: staticKeyId,
     dh: base64.encode(ephemeralKey.getPublicKey()),
-    salt: encryptParams.nonce,
+    salt: encryptParams.salt,
     rs: encryptParams.rs
   };
   encryptDecrypt(length.readUInt16BE(2), encryptParams, decryptParams);

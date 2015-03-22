@@ -40,8 +40,8 @@ function deriveKey(params) {
     if (secret.length !== KEY_LENGTH) {
       throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
     }
-  } else if (params.ecdh) { // receiver/decrypt
-    var share = base64.decode(params.ecdh);
+  } else if (params.dh) { // receiver/decrypt
+    var share = base64.decode(params.dh);
     var key = savedKeys[params.keyid];
     secret = key.computeSecret(share);
   } else if (params.keyid) {
@@ -82,10 +82,9 @@ function generateIV(counter) {
   return iv_;
 }
 
-function decryptBlock(key, counter, buffer) {
+function decryptRecord(key, counter, buffer) {
   var iv = generateIV(counter);
   var gcm = crypto.createDecipheriv(AES_GCM, key, iv);
-  gcm.setAAD(new Buffer(0));
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
@@ -123,18 +122,17 @@ function decrypt(buffer, params) {
     if (end - start <= TAG_LENGTH) {
       throw new Error('Invalid block: too small at ' + i);
     }
-    var block = decryptBlock(key, i, buffer.slice(start, end));
+    var block = decryptRecord(key, i, buffer.slice(start, end));
     result = Buffer.concat([result, block]);
     start = end;
   }
   return result;
 }
 
-function encryptBlock(key, counter, buffer, pad) {
+function encryptRecord(key, counter, buffer, pad) {
   pad = pad || 0;
   var iv = generateIV(counter);
   var gcm = crypto.createCipheriv(AES_GCM, key, iv);
-  gcm.setAAD(new Buffer(0));
   var padding = new Buffer(pad + 1);
   padding.writeUIntBE(pad, 0, 1);
   var epadding = gcm.update(padding);
@@ -161,7 +159,7 @@ function encrypt(buffer, params) {
 
   for (var i = 0; start < buffer.length; ++i) {
     var end = Math.min(start + rs - 1, buffer.length);
-    var block = encryptBlock(key, i, buffer.slice(start, end));
+    var block = encryptRecord(key, i, buffer.slice(start, end));
     result = Buffer.concat([result, block]);
     start = end;
   }
