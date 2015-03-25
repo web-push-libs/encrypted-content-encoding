@@ -5,7 +5,9 @@ var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
+// Usage: node <this> <iterations> <maxsize>
 var count = parseInt(process.argv[2], 10) || 20;
+var maxLen = parseInt(process.argv[3], 10) || 100;
 var log;
 if (process.argv.length >= 3) {
   log = console.log.bind(console);
@@ -16,7 +18,7 @@ if (process.argv.length >= 3) {
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
   log("Salt: " + base64.encode(encryptParams.salt));
-  var input = crypto.randomBytes(length);
+  var input = crypto.randomBytes(Math.min(length, maxLen));
   // var input = new Buffer('I am the walrus');
   log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, encryptParams);
