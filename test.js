@@ -9,7 +9,7 @@ var assert = require('assert');
 var count = parseInt(process.argv[2], 10) || 20;
 var maxLen = parseInt(process.argv[3], 10) || 100;
 var log;
-if (process.argv.length >= 3) {
+if (count === 1) {
   log = console.log.bind(console);
 } else {
   log = function() {};
@@ -37,6 +37,37 @@ function useExplicitKey() {
   };
   log('Key: ' + base64.encode(params.key));
   encryptDecrypt(length.readUInt16BE(2), params);
+}
+
+function exactlyOneRecord() {
+  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
+  var params = {
+    key: base64.encode(crypto.randomBytes(16)),
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length + 1
+  };
+  encryptDecrypt(length, params);
+}
+
+function detectTruncation() {
+  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
+  var params = {
+    key: base64.encode(crypto.randomBytes(16)),
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length + 1
+  };
+  var input = crypto.randomBytes(Math.min(length, maxLen));
+  var encrypted = ece.encrypt(input, params);
+  var ok = false;
+  try {
+    ece.decrypt(encrypted.slice(0, length + 1 + 16), params);
+  } catch (e) {
+    log('Decryption error: ' + e);
+    ok = true;
+  }
+  if (!ok) {
+    throw new Error('Decryption succeeded, but should not have');
+  }
 }
 
 function useKeyId() {
@@ -92,13 +123,11 @@ function useDH() {
 var i;
 for (i = 0; i < count; ++i) {
   useExplicitKey();
-}
-
-for (i = 0; i < count; ++i) {
+  exactlyOneRecord();
+  detectTruncation();
   useKeyId();
-}
-
-for (i = 0; i < count; ++i) {
   useDH();
 }
+
+
 console.log('OK');
