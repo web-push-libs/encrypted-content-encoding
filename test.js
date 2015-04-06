@@ -62,10 +62,11 @@ function detectTruncation() {
   var input = crypto.randomBytes(Math.min(length, maxLen));
   log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, params);
+  encrypted = encrypted.slice(0, length + 1 + 16);
   log("Encrypted: " + base64.encode(encrypted));
   var ok = false;
   try {
-    ece.decrypt(encrypted.slice(0, length + 1 + 16), params);
+    ece.decrypt(encrypted, params);
   } catch (e) {
     log('----- OK: ' + e);
     ok = true;
