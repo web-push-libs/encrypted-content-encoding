@@ -20,12 +20,14 @@ function encryptDecrypt(length, encryptParams, decryptParams) {
   log("Salt: " + base64.encode(encryptParams.salt));
   var input = crypto.randomBytes(Math.min(length, maxLen));
   // var input = new Buffer('I am the walrus');
+  log("Salt: " + base64.encode(encryptParams.salt));
   log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, encryptParams);
   log("Encrypted: " + base64.encode(encrypted));
   var decrypted = ece.decrypt(encrypted, decryptParams);
   log("Decrypted: " + base64.encode(decrypted));
   assert.equal(Buffer.compare(input, decrypted), 0);
+  log("----- OK");
 }
 
 function useExplicitKey() {
@@ -56,13 +58,16 @@ function detectTruncation() {
     salt: base64.encode(crypto.randomBytes(16)),
     rs: length + 1
   };
+  log("Salt: " + base64.encode(params.salt));
   var input = crypto.randomBytes(Math.min(length, maxLen));
+  log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, params);
+  log("Encrypted: " + base64.encode(encrypted));
   var ok = false;
   try {
     ece.decrypt(encrypted.slice(0, length + 1 + 16), params);
   } catch (e) {
-    log('Decryption error: ' + e);
+    log('----- OK: ' + e);
     ok = true;
   }
   if (!ok) {
@@ -129,5 +134,4 @@ for (i = 0; i < count; ++i) {
   useDH();
 }
 
-
-console.log('OK');
+console.log('All tests passed.');
