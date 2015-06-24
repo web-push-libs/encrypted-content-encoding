@@ -7,7 +7,7 @@ var savedKeys = {};
 var AES_GCM = 'id-aes128-GCM';
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
-var IV_LENGTH = 12;
+var NONCE_LENGTH = 12;
 
 function HMAC_hash(key, input) {
   var hmac = crypto.createHmac('sha256', key);
@@ -16,9 +16,11 @@ function HMAC_hash(key, input) {
 }
 
 /* HKDF as defined in RFC5869, using SHA-256 */
-function HKDF(salt, ikm, info, l) {
-  var prk = HMAC_hash(salt, ikm);
+function HKDF_extract(salt, ikm) {
+  return HMAC_hash(salt, ikm);
+}
 
+function HKDF_expand(prk, info, l) {
   var output = new Buffer(0);
   var T = new Buffer(0);
   info = new Buffer(info, 'ascii');
@@ -33,7 +35,7 @@ function HKDF(salt, ikm, info, l) {
   return output.slice(0, l);
 }
 
-function deriveKey(params) {
+function extractKey(params) {
   var secret;
   if (params.key) {
     secret = base64.decode(params.key);
@@ -58,7 +60,11 @@ function deriveKey(params) {
   if (salt.length !== KEY_LENGTH) {
     throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
   }
-  return HKDF(salt, secret, "Content-Encoding: aesgcm128", KEY_LENGTH);
+  var prk = HKDF_extract(salt, secret);
+  return {
+    key: HKDF_expand(prk, 'Content-Encoding: aesgcm128', KEY_LENGTH),
+    nonce: HKDF_expand(prk, 'Content-Encoding: nonce', NONCE_LENGTH)
+  };
 }
 
 function determineRecordSize(params) {
@@ -72,19 +78,18 @@ function determineRecordSize(params) {
   return rs;
 }
 
-var iv_;
-function generateIV(counter) {
-  if (!iv_) {
-    iv_ = new Buffer(IV_LENGTH);
-    iv_.fill(0);
-  }
-  iv_.writeUIntBE(counter, iv_.length - 6, 6);
-  return iv_;
+function generateNonce(base, counter) {
+  var nonce = new Buffer(base);
+  var m = nonce.readUIntBE(nonce.length - 6, 6);
+  var x = ((m ^ counter) & 0xffffff) +
+      ((((m / 0x1000000) ^ (counter / 0x1000000)) & 0xffffff) * 0x1000000);
+  nonce.writeUIntBE(x, nonce.length - 6, 6);
+  return nonce;
 }
 
 function decryptRecord(key, counter, buffer) {
-  var iv = generateIV(counter);
-  var gcm = crypto.createDecipheriv(AES_GCM, key, iv);
+  var nonce = generateNonce(key.nonce, counter);
+  var gcm = crypto.createDecipheriv(AES_GCM, key.key, nonce);
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
@@ -112,7 +117,7 @@ function decryptRecord(key, counter, buffer) {
  * saveKey().
  */
 function decrypt(buffer, params) {
-  var key = deriveKey(params);
+  var key = extractKey(params);
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
@@ -135,8 +140,8 @@ function decrypt(buffer, params) {
 
 function encryptRecord(key, counter, buffer, pad) {
   pad = pad || 0;
-  var iv = generateIV(counter);
-  var gcm = crypto.createCipheriv(AES_GCM, key, iv);
+  var nonce = generateNonce(key.nonce, counter);
+  var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
   var padding = new Buffer(pad + 1);
   padding.writeUIntBE(pad, 0, 1);
   var epadding = gcm.update(padding);
@@ -156,7 +161,7 @@ function encryptRecord(key, counter, buffer, pad) {
  * identifies a local ECDH key pair (created by crypto.createECDH()).
  */
 function encrypt(buffer, params) {
-  var key = deriveKey(params);
+  var key = extractKey(params);
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
