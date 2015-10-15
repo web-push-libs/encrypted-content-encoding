@@ -1,6 +1,18 @@
 {
-  "name": "encrypted-content-encoding",
-  "version": "0.1.0",
+  "name": "http_ece",
+  "version": "0.2.0",
+  "description": "Encrypted Content-Encoding for HTTP",
+  "homepage": "https://github.com/martinthomson/encrypted-content-encoding",
+  "bugs": "https://github.com/martinthomson/encrypted-content-encoding/issues",
+  "author": {
+    "name" : "Martin Thomson",
+    "email" : "martin.thomson@gmail.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martinthomson/encrypted-content-encoding.git"
+  },
+  "license": "MIT",
   "main": "./ece.js",
   "scripts": { "test": "node ./test.js" },
   "engines" : { "node" : ">=0.12" },
