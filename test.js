@@ -20,7 +20,6 @@ function encryptDecrypt(length, encryptParams, decryptParams) {
   log("Salt: " + base64.encode(encryptParams.salt));
   var input = crypto.randomBytes(Math.min(length, maxLen));
   // var input = new Buffer('I am the walrus');
-  log("Salt: " + base64.encode(encryptParams.salt));
   log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, encryptParams);
   log("Encrypted: " + base64.encode(encrypted));
