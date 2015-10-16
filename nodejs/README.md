@@ -6,7 +6,7 @@ content-encoding](https://tools.ietf.org/html/draft-nottingham-http-encryption-e
 # Use
 
 ```js
-var ece = require('encrypted-content-encoding');
+var ece = require('http_ece');
 var crypto = require('crypto')
 var base64 = require('base64url');
 
