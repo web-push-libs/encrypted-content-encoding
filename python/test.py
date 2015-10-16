@@ -1,5 +1,4 @@
 import http_ece as ece
-import base64
 import os
 import struct
 import sys
@@ -14,7 +13,10 @@ if len(sys.argv) > 2:
 
 def log(arg):
     if (count == 1):
-        print arg
+        print(arg)
+def b64e(arg):
+    import base64
+    return base64.urlsafe_b64encode(arg).decode()
 
 def rlen():
     return struct.unpack_from('=H', os.urandom(2))[0]
@@ -22,14 +24,22 @@ def rlen():
 def encryptDecrypt(length, encryptParams, decryptParams=None):
     if decryptParams is None:
         decryptParams = encryptParams
-    log('Salt: ' + base64.urlsafe_b64encode(encryptParams['salt']))
+    log('Salt: ' + b64e(encryptParams['salt']))
     input = os.urandom(min(length, maxLen))
     # input = new Buffer('I am the walrus')
-    log('Input: ' + base64.urlsafe_b64encode(input))
-    encrypted = ece.encrypt(input, salt=encryptParams.get('salt'), key=encryptParams.get('key'), keyid=encryptParams.get('keyid'), dh=encryptParams.get('dh'), rs=encryptParams.get('rs'))
-    log('Encrypted: ' + base64.urlsafe_b64encode(encrypted))
-    decrypted = ece.decrypt(encrypted, salt=decryptParams.get('salt'), key=decryptParams.get('key'), keyid=decryptParams.get('keyid'), dh=decryptParams.get('dh'), rs=decryptParams.get('rs'))
-    log('Decrypted: ' + base64.urlsafe_b64encode(decrypted))
+    log('Input: ' + b64e(input))
+    encrypted = ece.encrypt(input, salt=encryptParams.get('salt'),
+                            key=encryptParams.get('key'),
+                            keyid=encryptParams.get('keyid'),
+                            dh=encryptParams.get('dh'),
+                            rs=encryptParams.get('rs'))
+    log('Encrypted: ' + b64e(encrypted))
+    decrypted = ece.decrypt(encrypted, salt=decryptParams.get('salt'),
+                            key=decryptParams.get('key'),
+                            keyid=decryptParams.get('keyid'),
+                            dh=decryptParams.get('dh'),
+                            rs=decryptParams.get('rs'))
+    log('Decrypted: ' + b64e(decrypted))
     assert input == decrypted
     log("----- OK");
 
@@ -40,7 +50,7 @@ def useExplicitKey():
         'salt': os.urandom(16),
         'rs': rlen() + 1
     }
-    log('Key: ' + base64.urlsafe_b64encode(params['key']))
+    log('Key: ' + b64e(params['key']))
     encryptDecrypt(rlen() + 1, params)
 
 
@@ -75,7 +85,7 @@ def detectTruncation():
 
 
 def useKeyId():
-    keyid = base64.urlsafe_b64encode(os.urandom(16))
+    keyid = b64e(os.urandom(16))
     key = os.urandom(16)
     ece.keys[keyid] = key
     params = {
@@ -90,26 +100,26 @@ def useKeyId():
 # doesn't even do ECDH; so this doesn't actually work
 def useDH():
     def isUncompressed(k):
-        b1 = k.get_pubkey()[0]
+        b1 = k.get_pubkey()[0:1]
         assert struct.unpack("B", b1)[0] == 4, 'is an uncompressed point'
 
     # the static key is used by the receiver
     staticKey = pyelliptic.ECC(curve='prime256v1')
     isUncompressed(staticKey)
-    staticKeyId = base64.urlsafe_b64encode(staticKey.get_pubkey()[1:])
+    staticKeyId = b64e(staticKey.get_pubkey()[1:])
     ece.keys[staticKeyId] = staticKey
 
-    log('Receiver private: ' + base64.urlsafe_b64encode(staticKey.get_privkey()))
-    log('Receiver public: ' + base64.urlsafe_b64encode(staticKey.get_pubkey()))
+    log('Receiver private: ' + b64e(staticKey.get_privkey()))
+    log('Receiver public: ' + b64e(staticKey.get_pubkey()))
 
     # the ephemeral key is used by the sender
     ephemeralKey = pyelliptic.ECC(curve='prime256v1')
     isUncompressed(ephemeralKey)
-    ephemeralKeyId = base64.urlsafe_b64encode(ephemeralKey.get_pubkey()[1:])
+    ephemeralKeyId = b64e(ephemeralKey.get_pubkey()[1:])
     ece.keys[ephemeralKeyId] = ephemeralKey
 
-    log('Sender private: ' + base64.urlsafe_b64encode(ephemeralKey.get_privkey()))
-    log('Sender public: ' + base64.urlsafe_b64encode(ephemeralKey.get_pubkey()))
+    log('Sender private: ' + b64e(ephemeralKey.get_privkey()))
+    log('Sender public: ' + b64e(ephemeralKey.get_pubkey()))
 
     encryptParams = {
         'keyid': ephemeralKeyId,
@@ -127,11 +137,11 @@ def useDH():
     encryptDecrypt(rlen(), encryptParams, decryptParams)
 
 if __name__ == '__main__':
-    for i in range(0,count):
+    for i in list(range(0,count)):
         useExplicitKey()
         exactlyOneRecord()
         detectTruncation()
         useKeyId()
         useDH()
 
-    print 'All tests passed.'
+    print('All tests passed.')

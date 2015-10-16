@@ -56,7 +56,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
             backend=default_backend()
         ).decryptor()
         data = decryptor.update(buffer[:-16]) + decryptor.finalize()
-        (pad,) = struct.unpack("!B", data[0]);
+        (pad,) = struct.unpack("!B", data[0:1]);
         if data[1:1+pad] != (b"\x00" * pad):
             raise Exception(u"Bad padding")
         data = data[1+pad:]
@@ -71,7 +71,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
 
     result = b""
     counter = 0
-    for i in xrange(0, len(buffer), rs):
+    for i in list(range(0, len(buffer), rs)):
         result += decryptRecord(key_, nonce_, counter, buffer[i:i+rs])
         ++counter
     return result
@@ -96,7 +96,7 @@ def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
     counter = 0
     # the extra one ensures that we produce a padding only record if the data
     # length is an exact multiple of rs-1
-    for i in xrange(0, len(buffer) + 1, rs):
+    for i in list(range(0, len(buffer) + 1, rs)):
         result += encryptRecord(key_, nonce_, counter, buffer[i:i+rs])
         ++counter
     return result
