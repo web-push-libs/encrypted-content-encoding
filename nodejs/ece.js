@@ -79,8 +79,8 @@ function extractDH(keyid, dh, mode) {
     senderPubKey = share;
     receiverPubKey = key.getPublicKey();
   } else {
-    throw new Error('Unknown mode only ' + MODE_ENCRYPT + ' and '
-		    + MODE_DECRYPT + ' supported');
+    throw new Error('Unknown mode only ' + MODE_ENCRYPT +
+                    ' and ' + MODE_DECRYPT + ' supported');
   }
   return {
     secret: key.computeSecret(share),
