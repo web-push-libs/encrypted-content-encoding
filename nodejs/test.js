@@ -7,7 +7,15 @@ var assert = require('assert');
 
 // Usage: node <this> <iterations> <maxsize>
 var count = parseInt(process.argv[2], 10) || 20;
-var maxLen = parseInt(process.argv[3], 10) || 100;
+var maxLen = 100;
+var plaintext = null;
+if (process.argv.length >= 4) {
+  if (!isNaN(parseInt(process.argv[3], 10))) {
+    maxLen = parseInt(process.argv[3], 10);
+  } else {
+     plaintext = new Buffer(process.argv[3], 'ascii');
+  }
+}
 var log;
 if (count === 1) {
   log = console.log.bind(console);
@@ -18,7 +26,7 @@ if (count === 1) {
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
   log("Salt: " + base64.encode(encryptParams.salt));
-  var input = crypto.randomBytes(Math.min(length, maxLen));
+  var input = plaintext || crypto.randomBytes(Math.min(length, maxLen));
   // var input = new Buffer('I am the walrus');
   log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, encryptParams);
