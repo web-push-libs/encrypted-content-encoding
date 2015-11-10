@@ -94,7 +94,7 @@ function useDH() {
   staticKey.generateKeys();
   assert.equal(staticKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var staticKeyId = staticKey.getPublicKey().toString('hex')
-  ece.saveKey(staticKeyId, staticKey);
+  ece.saveKey(staticKeyId, staticKey, 'p256dh');
 
   log("Receiver private: " + base64.encode(staticKey.getPrivateKey()));
   log("Receiver public: " + base64.encode(staticKey.getPublicKey()));
@@ -104,7 +104,7 @@ function useDH() {
   ephemeralKey.generateKeys();
   assert.equal(ephemeralKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var ephemeralKeyId = ephemeralKey.getPublicKey().toString('hex');
-  ece.saveKey(ephemeralKeyId, ephemeralKey);
+  ece.saveKey(ephemeralKeyId, ephemeralKey, 'p256dh');
 
   log("Sender private: " + base64.encode(ephemeralKey.getPrivateKey()));
   log("Sender public: " + base64.encode(ephemeralKey.getPublicKey()));
