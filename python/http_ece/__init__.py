@@ -8,19 +8,46 @@ from cryptography.hazmat.primitives.ciphers import (
 import pyelliptic
 
 keys = {}
+labels = {}
 
-def deriveKey(salt, key=None, dh=None, keyid=None):
+def deriveKey(mode, salt, key=None, dh=None, keyid=None):
+    def buildInfo(base, context):
+        return b"Content-Encoding: " + base + b"\0" + context
+
+    def deriveDH(mode, keyid, dh):
+        def lengthPrefix(key):
+            return struct.pack("!H", len(key)) + key
+
+        if keyid is None:
+            raise Exception(u"'keyid' is not specified with 'dh'")
+        if not keyid in keys:
+            raise Exception(u"'keyid' doesn't identify a key: " + keyid)
+        if not keyid in labels:
+            raise Exception(u"'keyid' doesn't identify a key label: " + keyid)
+        if mode == "encrypt":
+            senderPubKey = keys[keyid].get_pubkey()
+            receiverPubKey = dh
+        elif mode == "decrypt":
+            senderPubKey = dh
+            receiverPubKey = keys[keyid].get_pubkey()
+        else:
+            raise Exception(u"unknown 'mode' specified: " + mode);
+
+        if type(labels[keyid]) == type(u""):
+            labels[keyid] = labels[keyid].encode("utf-8")
+
+        return (keys[keyid].get_ecdh_key(dh),
+                labels[keyid] + b"\0" +
+                    lengthPrefix(receiverPubKey) + lengthPrefix(senderPubKey))
+
     if salt is None or len(salt) != 16:
         raise Exception(u"'salt' must be a 16 octet value")
 
+    context = b''
     if key is not None:
         secret = key
     elif dh is not None:
-        if keyid is None:
-            raise Exception(u"'keyid' is not specified with 'dh'")
-        if keys[keyid] is None:
-            raise Exception(u"'keyid' doesn't identify a key")
-        secret = keys[keyid].get_ecdh_key(dh)
+        (secret, context) = deriveDH(mode=mode, keyid=keyid, dh=dh)
     elif keyid is not None:
         secret = keys[keyid]
     if secret is None:
@@ -30,14 +57,14 @@ def deriveKey(salt, key=None, dh=None, keyid=None):
         algorithm=hashes.SHA256(),
         length=16,
         salt=salt,
-        info=b"Content-Encoding: aesgcm128",
+        info=buildInfo(b"aesgcm128", context),
         backend=default_backend()
     )
     hkdf_nonce = HKDF(
         algorithm=hashes.SHA256(),
         length=12,
         salt=salt,
-        info=b"Content-Encoding: nonce",
+        info=buildInfo(b"nonce", context),
         backend=default_backend()
     )
     return (hkdf_key.derive(secret), hkdf_nonce.derive(secret))
@@ -62,7 +89,8 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
         data = data[1+pad:]
         return data
 
-    (key_, nonce_) = deriveKey(salt=salt, key=key, keyid=keyid, dh=dh)
+    (key_, nonce_) = deriveKey(mode="decrypt", salt=salt,
+                               key=key, keyid=keyid, dh=dh)
     if rs < 2:
         raise Exception(u"Record size too small")
     rs += 16 # account for tags
@@ -87,7 +115,8 @@ def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
         data += encryptor.tag
         return data
 
-    (key_, nonce_) = deriveKey(salt=salt, key=key, keyid=keyid, dh=dh)
+    (key_, nonce_) = deriveKey(mode="encrypt", salt=salt,
+                               key=key, keyid=keyid, dh=dh)
     if rs < 2:
         raise Exception(u"Record size too small")
     rs -= 1 # account for padding
