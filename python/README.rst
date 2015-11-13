@@ -6,18 +6,18 @@ content-encoding <https://tools.ietf.org/html/draft-nottingham-http-encryption-e
 
 # Use
 
-```python
-import http_ece
-import os, base64
+.. code-block:: python
 
-key = os.urandom(16)
-salt = os.urandom(16)
-data = os.urandom(100)
+    import http_ece
+    import os, base64
 
-encrypted = http_ece.encrypt(data, salt=salt, key=key)
-decrypted = http_ece.decrypt(encrypted, salt=salt, key=key)
-assert data == decrypted
-```
+    key = os.urandom(16)
+    salt = os.urandom(16)
+    data = os.urandom(100)
+
+    encrypted = http_ece.encrypt(data, salt=salt, key=key)
+    decrypted = http_ece.decrypt(encrypted, salt=salt, key=key)
+    assert data == decrypted
 
 This also supports the static-ephemeral ECDH mode.
 
