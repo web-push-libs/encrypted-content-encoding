@@ -4,7 +4,8 @@ encrypted-content-encoding
 A simple implementation of the `HTTP encrypted
 content-encoding <https://tools.ietf.org/html/draft-nottingham-http-encryption-encoding>`_
 
-# Use
+Use
+---
 
 .. code-block:: python
 
@@ -21,6 +22,7 @@ content-encoding <https://tools.ietf.org/html/draft-nottingham-http-encryption-e
 
 This also supports the static-ephemeral ECDH mode.
 
-# TODO
+TODO
+----
 
 Provide a streaming API
