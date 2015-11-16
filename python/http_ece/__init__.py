@@ -10,9 +10,9 @@ import pyelliptic
 keys = {}
 labels = {}
 
-def deriveKey(mode, salt, key=None, dh=None, keyid=None):
+def deriveKey(mode, salt, key=None, dh=None, keyid=None, expandedContext=b""):
     def buildInfo(base, context):
-        return b"Content-Encoding: " + base + b"\0" + context
+        return b"Content-Encoding: " + base + b"\0" + context + expandedContext
 
     def deriveDH(mode, keyid, dh):
         def lengthPrefix(key):
@@ -43,7 +43,7 @@ def deriveKey(mode, salt, key=None, dh=None, keyid=None):
     if salt is None or len(salt) != 16:
         raise Exception(u"'salt' must be a 16 octet value")
 
-    context = b''
+    context = b""
     if key is not None:
         secret = key
     elif dh is not None:
@@ -75,7 +75,7 @@ def iv(base, counter):
     (mask,) = struct.unpack("!Q", base[4:])
     return base[:4] + struct.pack("!Q", counter ^ mask)
 
-def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
+def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContext=b""):
     def decryptRecord(key, nonce, counter, buffer):
         decryptor = Cipher(
             algorithms.AES(key),
@@ -90,7 +90,8 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
         return data
 
     (key_, nonce_) = deriveKey(mode="decrypt", salt=salt,
-                               key=key, keyid=keyid, dh=dh)
+                               key=key, keyid=keyid, dh=dh,
+                               expandedContext=expandedContext)
     if rs < 2:
         raise Exception(u"Record size too small")
     rs += 16 # account for tags
@@ -104,7 +105,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
         counter += 1
     return result
 
-def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
+def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContext=b""):
     def encryptRecord(key, nonce, counter, buffer):
         encryptor = Cipher(
             algorithms.AES(key),
@@ -116,7 +117,8 @@ def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
         return data
 
     (key_, nonce_) = deriveKey(mode="encrypt", salt=salt,
-                               key=key, keyid=keyid, dh=dh)
+                               key=key, keyid=keyid, dh=dh,
+                               expandedContext=expandedContext)
     if rs < 2:
         raise Exception(u"Record size too small")
     rs -= 1 # account for padding
