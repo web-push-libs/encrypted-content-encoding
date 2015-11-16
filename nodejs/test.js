@@ -7,7 +7,15 @@ var assert = require('assert');
 
 // Usage: node <this> <iterations> <maxsize>
 var count = parseInt(process.argv[2], 10) || 20;
-var maxLen = parseInt(process.argv[3], 10) || 100;
+var maxLen = 100;
+var plaintext = null;
+if (process.argv.length >= 4) {
+  if (!isNaN(parseInt(process.argv[3], 10))) {
+    maxLen = parseInt(process.argv[3], 10);
+  } else {
+     plaintext = new Buffer(process.argv[3], 'ascii');
+  }
+}
 var log;
 if (count === 1) {
   log = console.log.bind(console);
@@ -18,7 +26,7 @@ if (count === 1) {
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
   log("Salt: " + base64.encode(encryptParams.salt));
-  var input = crypto.randomBytes(Math.min(length, maxLen));
+  var input = plaintext || crypto.randomBytes(Math.min(length, maxLen));
   // var input = new Buffer('I am the walrus');
   log("Input: " + base64.encode(input));
   var encrypted = ece.encrypt(input, encryptParams);
@@ -37,6 +45,19 @@ function useExplicitKey() {
     rs: length.readUInt16BE(0) + 1
   };
   log('Key: ' + base64.encode(params.key));
+  encryptDecrypt(length.readUInt16BE(2), params);
+}
+
+function expandedContext() {
+  var length = crypto.randomBytes(4);
+  var params = {
+    key: base64.encode(crypto.randomBytes(16)),
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length.readUInt16BE(0) + 1,
+    expandedContext: base64.encode(crypto.randomBytes(16))
+  };
+  log('Key: ' + base64.encode(params.key));
+  log('Context: ' + base64.encode(params.expandedContext));
   encryptDecrypt(length.readUInt16BE(2), params);
 }
 
@@ -94,7 +115,7 @@ function useDH() {
   staticKey.generateKeys();
   assert.equal(staticKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var staticKeyId = staticKey.getPublicKey().toString('hex')
-  ece.saveKey(staticKeyId, staticKey);
+  ece.saveKey(staticKeyId, staticKey, 'P-256');
 
   log("Receiver private: " + base64.encode(staticKey.getPrivateKey()));
   log("Receiver public: " + base64.encode(staticKey.getPublicKey()));
@@ -104,7 +125,7 @@ function useDH() {
   ephemeralKey.generateKeys();
   assert.equal(ephemeralKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var ephemeralKeyId = ephemeralKey.getPublicKey().toString('hex');
-  ece.saveKey(ephemeralKeyId, ephemeralKey);
+  ece.saveKey(ephemeralKeyId, ephemeralKey, 'P-256');
 
   log("Sender private: " + base64.encode(ephemeralKey.getPrivateKey()));
   log("Sender public: " + base64.encode(ephemeralKey.getPublicKey()));
@@ -128,6 +149,7 @@ function useDH() {
 var i;
 for (i = 0; i < count; ++i) {
   useExplicitKey();
+  expandedContext();
   exactlyOneRecord();
   detectTruncation();
   useKeyId();

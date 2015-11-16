@@ -1,6 +1,6 @@
 {
   "name": "http_ece",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Encrypted Content-Encoding for HTTP",
   "homepage": "https://github.com/martinthomson/encrypted-content-encoding",
   "bugs": "https://github.com/martinthomson/encrypted-content-encoding/issues",

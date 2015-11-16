@@ -4,10 +4,13 @@ var crypto = require('crypto');
 var base64 = require('urlsafe-base64');
 
 var savedKeys = {};
+var keyLabels = {};
 var AES_GCM = 'id-aes128-GCM';
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
 var NONCE_LENGTH = 12;
+var MODE_ENCRYPT = 'encrypt';
+var MODE_DECRYPT = 'decrypt';
 
 function HMAC_hash(key, input) {
   var hmac = crypto.createHmac('sha256', key);
@@ -35,35 +38,94 @@ function HKDF_expand(prk, info, l) {
   return output.slice(0, l);
 }
 
-function extractKey(params) {
+function info(base, context) {
+  return Buffer.concat([
+    new Buffer('Content-Encoding: ' + base + '\0', 'ascii'),
+    context
+  ]);
+}
+
+function extractSalt(salt) {
+  if (!salt) {
+    throw new Error('A salt is required');
+  }
+  salt = base64.decode(salt);
+  if (salt.length !== KEY_LENGTH) {
+    throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
+  }
+  return salt;
+}
+
+function lengthPrefix(buffer) {
+  var b = Buffer.concat([ new Buffer(2), buffer ]);
+  b.writeUIntBE(buffer.length, 0, 2);
+  return b;
+}
+
+function extractDH(keyid, dh, mode) {
+  if (!savedKeys[keyid]) {
+    throw new Error('No known DH key for ' + keyid);
+  }
+  if (!keyLabels[keyid]) {
+    throw new Error('No known DH key label for ' + keyid);
+  }
+  var share = base64.decode(dh);
+  var key = savedKeys[keyid];
+  var senderPubKey, receiverPubKey;
+  if (mode === MODE_ENCRYPT) {
+    senderPubKey = key.getPublicKey();
+    receiverPubKey = share;
+  } else if (mode === MODE_DECRYPT) {
+    senderPubKey = share;
+    receiverPubKey = key.getPublicKey();
+  } else {
+    throw new Error('Unknown mode only ' + MODE_ENCRYPT +
+                    ' and ' + MODE_DECRYPT + ' supported');
+  }
+  return {
+    secret: key.computeSecret(share),
+    context: Buffer.concat([
+      keyLabels[keyid],
+      lengthPrefix(receiverPubKey),
+      lengthPrefix(senderPubKey)
+    ])
+  };
+}
+
+function extractSecretAndContext(params, mode) {
   var secret;
+  var context = new Buffer(0);
   if (params.key) {
     secret = base64.decode(params.key);
     if (secret.length !== KEY_LENGTH) {
       throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
     }
   } else if (params.dh) { // receiver/decrypt
-    var share = base64.decode(params.dh);
-    var key = savedKeys[params.keyid];
-    secret = key.computeSecret(share);
+    var r = extractDH(params.keyid, params.dh, mode);
+    secret = r.secret;
+    context = r.context;
   } else if (params.keyid) {
     secret = savedKeys[params.keyid];
   }
   if (!secret) {
     throw new Error('Unable to determine key');
   }
-  if (!params.salt) {
-    throw new Error('A salt is required');
+  if (params.expandedContext) {
+    context = Buffer.concat([
+      context,
+      base64.decode(params.expandedContext)
+    ]);
   }
+  return { secret: secret, context: context };
+}
 
-  var salt = base64.decode(params.salt);
-  if (salt.length !== KEY_LENGTH) {
-    throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
-  }
-  var prk = HKDF_extract(salt, secret);
+function deriveKeyAndNonce(params, mode) {
+  var salt = extractSalt(params.salt);
+  var s = extractSecretAndContext(params, mode);
+  var prk = HKDF_extract(salt, s.secret);
   return {
-    key: HKDF_expand(prk, 'Content-Encoding: aesgcm128', KEY_LENGTH),
-    nonce: HKDF_expand(prk, 'Content-Encoding: nonce', NONCE_LENGTH)
+    key: HKDF_expand(prk, info('aesgcm128', s.context), KEY_LENGTH),
+    nonce: HKDF_expand(prk, info('nonce', s.context), NONCE_LENGTH)
   };
 }
 
@@ -117,7 +179,7 @@ function decryptRecord(key, counter, buffer) {
  * saveKey().
  */
 function decrypt(buffer, params) {
-  var key = extractKey(params);
+  var key = deriveKeyAndNonce(params, MODE_DECRYPT);
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
@@ -158,10 +220,11 @@ function encryptRecord(key, counter, buffer, pad) {
  * Encrypt some bytes.  This uses the parameters to determine the key and block
  * size, which are described in the draft.  Note that for encryption, the
  * p256-dh parameter identifies the public share of the recipient and the keyid
- * identifies a local ECDH key pair (created by crypto.createECDH()).
+ * identifies a local DH key pair (created by crypto.createECDH() or
+ * crypto.createDiffieHellman()).
  */
 function encrypt(buffer, params) {
-  var key = extractKey(params);
+  var key = deriveKeyAndNonce(params, MODE_ENCRYPT);
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
@@ -178,10 +241,14 @@ function encrypt(buffer, params) {
 /**
  * This function saves a key under the provided identifier.  This is used to
  * save the keys that are used to decrypt and encrypt blobs that are identified
- * by a 'keyid'.
+ * by a 'keyid'.  DH or ECDH keys that are used with the 'dh' parameter need to
+ * include a label (included in 'dhLabel') that identifies them.
  */
-function saveKey(id, key) {
+function saveKey(id, key, dhLabel) {
   savedKeys[id] = key;
+  if (dhLabel) {
+    keyLabels[id] = new Buffer(dhLabel + '\0', 'ascii');
+  }
 }
 
 module.exports = {

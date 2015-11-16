@@ -1,8 +1,9 @@
+#!/usr/bin/python
 from setuptools import setup
 
 setup(
     name='http_ece',
-    version='0.2.0',
+    version='0.3.0',
     author='Martin Thomson',
     author_email='martin.thomson@gmail.com',
     scripts=[],
