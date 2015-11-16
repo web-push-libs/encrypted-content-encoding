@@ -33,13 +33,15 @@ def encryptDecrypt(length, encryptParams, decryptParams=None):
                             key=encryptParams.get("key"),
                             keyid=encryptParams.get("keyid"),
                             dh=encryptParams.get("dh"),
-                            rs=encryptParams.get("rs"))
+                            rs=encryptParams.get("rs"),
+                            expandedContext=encryptParams.get("expandedContext", b""))
     log("Encrypted: " + b64e(encrypted))
     decrypted = ece.decrypt(encrypted, salt=decryptParams.get("salt"),
                             key=decryptParams.get("key"),
                             keyid=decryptParams.get("keyid"),
                             dh=decryptParams.get("dh"),
-                            rs=decryptParams.get("rs"))
+                            rs=decryptParams.get("rs"),
+                            expandedContext=decryptParams.get("expandedContext", b""))
     log("Decrypted: " + b64e(decrypted))
     assert input == decrypted
     log("----- OK");
@@ -52,6 +54,19 @@ def useExplicitKey():
     }
     log("Key: " + b64e(params["key"]))
     encryptDecrypt(rlen() + 1, params)
+
+
+def expandedContext():
+    params = {
+        "key": os.urandom(16),
+        "salt": os.urandom(16),
+        "rs": rlen() + 1,
+        "expandedContext": os.urandom(10)
+    }
+    log("Key: " + b64e(params["key"]))
+    log("Context: " + b64e(params["expandedContext"]))
+    encryptDecrypt(rlen() + 1, params)
+
 
 
 def exactlyOneRecord():
@@ -135,6 +150,7 @@ def useDH():
 if __name__ == "__main__":
     for i in list(range(0,count)):
         useExplicitKey()
+        expandedContext()
         exactlyOneRecord()
         detectTruncation()
         useKeyId()

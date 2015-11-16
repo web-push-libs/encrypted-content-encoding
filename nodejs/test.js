@@ -48,6 +48,19 @@ function useExplicitKey() {
   encryptDecrypt(length.readUInt16BE(2), params);
 }
 
+function expandedContext() {
+  var length = crypto.randomBytes(4);
+  var params = {
+    key: base64.encode(crypto.randomBytes(16)),
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length.readUInt16BE(0) + 1,
+    expandedContext: base64.encode(crypto.randomBytes(16))
+  };
+  log('Key: ' + base64.encode(params.key));
+  log('Context: ' + base64.encode(params.expandedContext));
+  encryptDecrypt(length.readUInt16BE(2), params);
+}
+
 function exactlyOneRecord() {
   var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
   var params = {
@@ -136,6 +149,7 @@ function useDH() {
 var i;
 for (i = 0; i < count; ++i) {
   useExplicitKey();
+  expandedContext();
   exactlyOneRecord();
   detectTruncation();
   useKeyId();

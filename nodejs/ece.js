@@ -110,6 +110,12 @@ function extractSecretAndContext(params, mode) {
   if (!secret) {
     throw new Error('Unable to determine key');
   }
+  if (params.expandedContext) {
+    context = Buffer.concat([
+      context,
+      base64.decode(params.expandedContext)
+    ]);
+  }
   return { secret: secret, context: context };
 }
 
