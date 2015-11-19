@@ -9,6 +9,7 @@ var AES_GCM = 'id-aes128-GCM';
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
 var NONCE_LENGTH = 12;
+var SHA_256_LENGTH = 32;
 var MODE_ENCRYPT = 'encrypt';
 var MODE_DECRYPT = 'decrypt';
 
@@ -36,6 +37,10 @@ function HKDF_expand(prk, info, l) {
   }
 
   return output.slice(0, l);
+}
+
+function HKDF(salt, ikm, info, l) {
+  return HKDF_expand(HKDF_extract(salt, ikm), info, l);
 }
 
 function info(base, context) {
@@ -110,11 +115,9 @@ function extractSecretAndContext(params, mode) {
   if (!secret) {
     throw new Error('Unable to determine key');
   }
-  if (params.expandedContext) {
-    context = Buffer.concat([
-      context,
-      base64.decode(params.expandedContext)
-    ]);
+  if (params.authSecret) {
+    secret = HKDF(base64.decode(params.authSecret), secret,
+                  info('auth', new Buffer(0)), SHA_256_LENGTH);
   }
   return { secret: secret, context: context };
 }

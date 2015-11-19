@@ -10,9 +10,9 @@ import pyelliptic
 keys = {}
 labels = {}
 
-def deriveKey(mode, salt, key=None, dh=None, keyid=None, expandedContext=b""):
+def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=b""):
     def buildInfo(base, context):
-        return b"Content-Encoding: " + base + b"\0" + context + expandedContext
+        return b"Content-Encoding: " + base + b"\0" + context
 
     def deriveDH(mode, keyid, dh):
         def lengthPrefix(key):
@@ -53,6 +53,16 @@ def deriveKey(mode, salt, key=None, dh=None, keyid=None, expandedContext=b""):
     if secret is None:
         raise Exception(u"unable to determine the secret")
 
+    if authSecret is not None:
+        hkdf_auth = HKDF(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=authSecret,
+            info=buildInfo(b"auth", b""),
+            backend=default_backend()
+        )
+        secret = hkdf_auth.derive(secret)
+
     hkdf_key = HKDF(
         algorithm=hashes.SHA256(),
         length=16,
@@ -75,7 +85,7 @@ def iv(base, counter):
     (mask,) = struct.unpack("!Q", base[4:])
     return base[:4] + struct.pack("!Q", counter ^ mask)
 
-def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContext=b""):
+def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=b""):
     def decryptRecord(key, nonce, counter, buffer):
         decryptor = Cipher(
             algorithms.AES(key),
@@ -91,7 +101,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContex
 
     (key_, nonce_) = deriveKey(mode="decrypt", salt=salt,
                                key=key, keyid=keyid, dh=dh,
-                               expandedContext=expandedContext)
+                               authSecret=authSecret)
     if rs < 2:
         raise Exception(u"Record size too small")
     rs += 16 # account for tags
@@ -105,7 +115,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContex
         counter += 1
     return result
 
-def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContext=b""):
+def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=b""):
     def encryptRecord(key, nonce, counter, buffer):
         encryptor = Cipher(
             algorithms.AES(key),
@@ -118,7 +128,7 @@ def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, expandedContex
 
     (key_, nonce_) = deriveKey(mode="encrypt", salt=salt,
                                key=key, keyid=keyid, dh=dh,
-                               expandedContext=expandedContext)
+                               authSecret=authSecret)
     if rs < 2:
         raise Exception(u"Record size too small")
     rs -= 1 # account for padding

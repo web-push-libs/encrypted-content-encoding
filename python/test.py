@@ -34,14 +34,14 @@ def encryptDecrypt(length, encryptParams, decryptParams=None):
                             keyid=encryptParams.get("keyid"),
                             dh=encryptParams.get("dh"),
                             rs=encryptParams.get("rs"),
-                            expandedContext=encryptParams.get("expandedContext", b""))
+                            authSecret=encryptParams.get("authSecret", b""))
     log("Encrypted: " + b64e(encrypted))
     decrypted = ece.decrypt(encrypted, salt=decryptParams.get("salt"),
                             key=decryptParams.get("key"),
                             keyid=decryptParams.get("keyid"),
                             dh=decryptParams.get("dh"),
                             rs=decryptParams.get("rs"),
-                            expandedContext=decryptParams.get("expandedContext", b""))
+                            authSecret=decryptParams.get("authSecret", b""))
     log("Decrypted: " + b64e(decrypted))
     assert input == decrypted
     log("----- OK");
@@ -56,15 +56,15 @@ def useExplicitKey():
     encryptDecrypt(rlen() + 1, params)
 
 
-def expandedContext():
+def authSecret():
     params = {
         "key": os.urandom(16),
         "salt": os.urandom(16),
         "rs": rlen() + 1,
-        "expandedContext": os.urandom(10)
+        "authSecret": os.urandom(10)
     }
     log("Key: " + b64e(params["key"]))
-    log("Context: " + b64e(params["expandedContext"]))
+    log("Context: " + b64e(params["authSecret"]))
     encryptDecrypt(rlen() + 1, params)
 
 
@@ -150,7 +150,7 @@ def useDH():
 if __name__ == "__main__":
     for i in list(range(0,count)):
         useExplicitKey()
-        expandedContext()
+        authSecret()
         exactlyOneRecord()
         detectTruncation()
         useKeyId()
