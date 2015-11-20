@@ -6,7 +6,7 @@ var ece = require('./ece.js');
 
 if (process.argv.length < 7) {
   console.warn('Usage: ' + process.argv.slice(0, 2).join(' ') +
-               ' <receiver-private> <receiver-public> <sender-public> <salt> <message> [auth-secret]');
+               ' <receiver-private> <receiver-public> <sender-public> <salt> <message> [JSON args]');
   process.exit(2);
 }
 
@@ -20,12 +20,21 @@ receiver.setPublicKey(base64.decode(process.argv[3]));
 receiver.setPrivateKey(base64.decode(process.argv[2]));
 ece.saveKey('keyid', receiver, "P-256");
 
-var result = ece.decrypt(base64.decode(process.argv[6]), {
+var params = {
   keyid: 'keyid',
   dh: process.argv[4],
-  salt: process.argv[5],
-  authSecret: process.argv[7]
-});
+  salt: process.argv[5]
+};
+
+if (process.argv.length > 7) {
+  var extra = JSON.parse(process.argv[7]);
+  Object.keys(extra).forEach(function(k) {
+    params[k] = extra[k];
+  });
+}
+
+console.log("Params: " + JSON.stringify(params, null, 2));
+var result = ece.decrypt(base64.decode(process.argv[6]), params);
 
 console.log(base64.encode(result));
 console.log(result.toString('utf-8'));

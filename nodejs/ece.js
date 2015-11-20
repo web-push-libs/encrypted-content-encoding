@@ -39,8 +39,8 @@ function HKDF_expand(prk, info, l) {
   return output.slice(0, l);
 }
 
-function HKDF(salt, ikm, info, l) {
-  return HKDF_expand(HKDF_extract(salt, ikm), info, l);
+function HKDF(salt, ikm, info, len) {
+  return HKDF_expand(HKDF_extract(salt, ikm), info, len);
 }
 
 function info(base, context) {
@@ -98,38 +98,36 @@ function extractDH(keyid, dh, mode) {
 }
 
 function extractSecretAndContext(params, mode) {
-  var secret;
-  var context = new Buffer(0);
+  var result = { secret: null, context: new Buffer(0) };
   if (params.key) {
-    secret = base64.decode(params.key);
-    if (secret.length !== KEY_LENGTH) {
+    result.secret = base64.decode(params.key);
+    if (result.secret.length !== KEY_LENGTH) {
       throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
     }
   } else if (params.dh) { // receiver/decrypt
-    var r = extractDH(params.keyid, params.dh, mode);
-    secret = r.secret;
-    context = r.context;
+    result = extractDH(params.keyid, params.dh, mode);
   } else if (params.keyid) {
-    secret = savedKeys[params.keyid];
+    result.secret = savedKeys[params.keyid];
   }
-  if (!secret) {
+  if (!result.secret) {
     throw new Error('Unable to determine key');
   }
   if (params.authSecret) {
-    secret = HKDF(base64.decode(params.authSecret), secret,
+    result.secret = HKDF(base64.decode(params.authSecret), result.secret,
                   info('auth', new Buffer(0)), SHA_256_LENGTH);
   }
-  return { secret: secret, context: context };
+  return result;
 }
 
 function deriveKeyAndNonce(params, mode) {
   var salt = extractSalt(params.salt);
   var s = extractSecretAndContext(params, mode);
   var prk = HKDF_extract(salt, s.secret);
-  return {
+  var result = {
     key: HKDF_expand(prk, info('aesgcm128', s.context), KEY_LENGTH),
     nonce: HKDF_expand(prk, info('nonce', s.context), NONCE_LENGTH)
   };
+  return result;
 }
 
 function determineRecordSize(params) {
@@ -232,12 +230,22 @@ function encrypt(buffer, params) {
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
+  var pad = isNaN(parseInt(params.pad, 10)) ? 0 : parseInt(params.pad, 10);
 
+  // Note the <= here ensures that we write out a padding-only block at the end
+  // of a buffer.
   for (var i = 0; start <= buffer.length; ++i) {
-    var end = Math.min(start + rs - 1, buffer.length);
-    var block = encryptRecord(key, i, buffer.slice(start, end));
+    // Pad so that at least one data byte is in a block.
+    var recordPad = Math.min(255, Math.min(rs - 2, pad));
+    pad -= recordPad;
+
+    var end = Math.min(start + rs - 1 - recordPad, buffer.length);
+    var block = encryptRecord(key, i, buffer.slice(start, end), recordPad);
     result = Buffer.concat([result, block]);
-    start += rs - 1;
+    start += rs - 1 - recordPad;
+  }
+  if (pad) {
+    throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');
   }
   return result;
 }
