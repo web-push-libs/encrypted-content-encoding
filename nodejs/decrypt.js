@@ -6,7 +6,7 @@ var ece = require('./ece.js');
 
 if (process.argv.length < 7) {
   console.warn('Usage: ' + process.argv.slice(0, 2).join(' ') +
-               ' <receiver-private> <receiver-public> <sender-public> <salt> <message>');
+               ' <receiver-private> <receiver-public> <sender-public> <salt> <message> [auth-secret]');
   process.exit(2);
 }
 
@@ -23,7 +23,8 @@ ece.saveKey('keyid', receiver, "P-256");
 var result = ece.decrypt(base64.decode(process.argv[6]), {
   keyid: 'keyid',
   dh: process.argv[4],
-  salt: process.argv[5]
+  salt: process.argv[5],
+  authSecret: process.argv[7]
 });
 
 console.log(base64.encode(result));
