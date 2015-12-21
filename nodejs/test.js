@@ -15,6 +15,15 @@ if (count === 1) {
   log = function() {};
 }
 
+function validate() {
+  ['hello', null, 1, NaN, [], {}].forEach(function(v) {
+    try {
+      encrypt('hello', {});
+      throw new Error('should insist on a buffer');
+    } catch (e) {}
+  });
+}
+
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
   log("Salt: " + base64.encode(encryptParams.salt));
@@ -125,6 +134,7 @@ function useDH() {
   encryptDecrypt(length.readUInt16BE(2), encryptParams, decryptParams);
 }
 
+validate();
 var i;
 for (i = 0; i < count; ++i) {
   useExplicitKey();

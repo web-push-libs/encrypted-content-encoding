@@ -162,6 +162,9 @@ function encryptRecord(key, counter, buffer, pad) {
  * identifies a local ECDH key pair (created by crypto.createECDH()).
  */
 function encrypt(buffer, params) {
+  if (!Buffer.isBuffer(buffer)) {
+    throw new Error('buffer argument must be a Buffer');
+  }
   var key = extractKey(params);
   var rs = determineRecordSize(params);
   var start = 0;
