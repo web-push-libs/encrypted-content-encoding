@@ -143,6 +143,7 @@ function encryptRecord(key, counter, buffer, pad) {
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
   var padding = new Buffer(pad + 1);
+  padding.fill(0);
   padding.writeUIntBE(pad, 0, 1);
   var epadding = gcm.update(padding);
   var ebuffer = gcm.update(buffer);
