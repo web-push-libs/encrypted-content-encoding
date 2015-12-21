@@ -265,6 +265,9 @@ function encryptRecord(key, counter, buffer, pad, padSize) {
  * crypto.createDiffieHellman()).
  */
 function encrypt(buffer, params) {
+  if (!Buffer.isBuffer(buffer)) {
+    throw new Error('buffer argument must be a Buffer');
+  }
   var key = deriveKeyAndNonce(params, MODE_ENCRYPT);
   var rs = determineRecordSize(params);
   var start = 0;
