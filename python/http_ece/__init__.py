@@ -73,7 +73,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
     counter = 0
     for i in list(range(0, len(buffer), rs)):
         result += decryptRecord(key_, nonce_, counter, buffer[i:i+rs])
-        ++counter
+        counter += 1
     return result
 
 def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096):
