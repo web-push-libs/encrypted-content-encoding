@@ -6,6 +6,7 @@ var base64 = require('urlsafe-base64');
 var savedKeys = {};
 var keyLabels = {};
 var AES_GCM = 'id-aes128-GCM';
+var PAD_SIZE = 2;
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
 var NONCE_LENGTH = 12;
@@ -135,8 +136,8 @@ function determineRecordSize(params) {
   if (isNaN(rs)) {
     return 4096;
   }
-  if (rs <= 1) {
-    throw new Error('The rs parameter has to be greater than 1');
+  if (rs <= PAD_SIZE) {
+    throw new Error('The rs parameter has to be greater than ' + PAD_SIZE);
   }
   return rs;
 }
@@ -156,16 +157,16 @@ function decryptRecord(key, counter, buffer) {
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
-  var pad = data.readUInt8(0);
-  if (pad + 1 > data.length) {
+  var pad = data.readUIntBE(0, PAD_SIZE);
+  if (pad + PAD_SIZE > data.length) {
     throw new Error('padding exceeds block size');
   }
   var padCheck = new Buffer(pad);
   padCheck.fill(0);
-  if (padCheck.compare(data.slice(1, 1 + pad)) !== 0) {
+  if (padCheck.compare(data.slice(PAD_SIZE, PAD_SIZE + pad)) !== 0) {
     throw new Error('invalid padding');
   }
-  return data.slice(1 + pad);
+  return data.slice(PAD_SIZE + pad);
 }
 
 // TODO: this really should use the node streams stuff
@@ -205,9 +206,9 @@ function encryptRecord(key, counter, buffer, pad) {
   pad = pad || 0;
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
-  var padding = new Buffer(pad + 1);
+  var padding = new Buffer(pad + PAD_SIZE);
   padding.fill(0);
-  padding.writeUIntBE(pad, 0, 1);
+  padding.writeUIntBE(pad, 0, PAD_SIZE);
   var epadding = gcm.update(padding);
   var ebuffer = gcm.update(buffer);
   gcm.final();
@@ -236,13 +237,14 @@ function encrypt(buffer, params) {
   // of a buffer.
   for (var i = 0; start <= buffer.length; ++i) {
     // Pad so that at least one data byte is in a block.
-    var recordPad = Math.min(255, Math.min(rs - 2, pad));
+    var recordPad = Math.min((1 << (PAD_SIZE * 8)) - 1, // maximum padding
+                             Math.min(rs - PAD_SIZE - 1, pad));
     pad -= recordPad;
 
-    var end = Math.min(start + rs - 1 - recordPad, buffer.length);
+    var end = Math.min(start + rs - PAD_SIZE - recordPad, buffer.length);
     var block = encryptRecord(key, i, buffer.slice(start, end), recordPad);
     result = Buffer.concat([result, block]);
-    start += rs - 1 - recordPad;
+    start += rs - PAD_SIZE - recordPad;
   }
   if (pad) {
     throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');

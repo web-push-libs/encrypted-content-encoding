@@ -15,6 +15,11 @@ def log(arg):
     if (count == 1):
         print(arg)
 
+def logbuf(msg, buf):
+    log(msg + ': [' + str(len(buf)) + ']');
+    for i in list(range(0,len(buf),48)):
+        log('    ' + b64e(buf[i:i+48]))
+
 def b64e(arg):
     import base64
     return base64.urlsafe_b64encode(arg).decode()
@@ -25,24 +30,28 @@ def rlen():
 def encryptDecrypt(length, encryptParams, decryptParams=None):
     if decryptParams is None:
         decryptParams = encryptParams
-    log("Salt: " + b64e(encryptParams["salt"]))
+    if "key" in encryptParams:
+        logbuf("Key", encryptParams["key"]);
+    logbuf("Salt", encryptParams["salt"])
+    if "authSecret" in encryptParams:
+        logbuf("Context", encryptParams["authSecret"])
     input = os.urandom(min(length, maxLen))
     # input = new Buffer("I am the walrus")
-    log("Input: " + b64e(input))
+    logbuf("Input", input)
     encrypted = ece.encrypt(input, salt=encryptParams.get("salt"),
                             key=encryptParams.get("key"),
                             keyid=encryptParams.get("keyid"),
                             dh=encryptParams.get("dh"),
                             rs=encryptParams.get("rs"),
-                            authSecret=encryptParams.get("authSecret", b""))
-    log("Encrypted: " + b64e(encrypted))
+                            authSecret=encryptParams.get("authSecret"))
+    logbuf("Encrypted", encrypted)
     decrypted = ece.decrypt(encrypted, salt=decryptParams.get("salt"),
                             key=decryptParams.get("key"),
                             keyid=decryptParams.get("keyid"),
                             dh=decryptParams.get("dh"),
                             rs=decryptParams.get("rs"),
-                            authSecret=decryptParams.get("authSecret", b""))
-    log("Decrypted: " + b64e(decrypted))
+                            authSecret=decryptParams.get("authSecret"))
+    logbuf("Decrypted", decrypted)
     assert input == decrypted
     log("----- OK");
 
@@ -52,7 +61,6 @@ def useExplicitKey():
         "salt": os.urandom(16),
         "rs": rlen() + 1
     }
-    log("Key: " + b64e(params["key"]))
     encryptDecrypt(rlen() + 1, params)
 
 
@@ -63,8 +71,6 @@ def authSecret():
         "rs": rlen() + 1,
         "authSecret": os.urandom(10)
     }
-    log("Key: " + b64e(params["key"]))
-    log("Context: " + b64e(params["authSecret"]))
     encryptDecrypt(rlen() + 1, params)
 
 
@@ -74,7 +80,7 @@ def exactlyOneRecord():
     params = {
         "key": os.urandom(16),
         "salt": os.urandom(16),
-        "rs": length + 1
+        "rs": length + 2
     }
     encryptDecrypt(length, params)
 
@@ -82,12 +88,12 @@ def detectTruncation():
     length = min(rlen(), maxLen)
     key = os.urandom(16)
     salt = os.urandom(16)
-    rs = length + 1
+    rs = length + 2
     input = os.urandom(min(length, maxLen))
     encrypted = ece.encrypt(input, salt=salt, key=key, rs=rs)
     ok = False
     try:
-        ece.decrypt(encrypted[0:length + 1 + 16], salt=salt, key=key, rs=rs)
+        ece.decrypt(encrypted[0:length + 2 + 16], salt=salt, key=key, rs=rs)
     except Exception as e:
         log("Decryption error: %s" % e.args)
         log("----- OK")
@@ -149,11 +155,15 @@ def useDH():
 
 if __name__ == "__main__":
     for i in list(range(0,count)):
-        useExplicitKey()
-        authSecret()
-        exactlyOneRecord()
-        detectTruncation()
-        useKeyId()
-        useDH()
+        for f in (
+                useExplicitKey,
+                authSecret,
+                exactlyOneRecord,
+                detectTruncation,
+                useKeyId,
+                useDH
+                ):
+            log("Test: " + f.__name__)
+            f()
 
     print("All tests passed.")
