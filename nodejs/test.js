@@ -7,26 +7,43 @@ var assert = require('assert');
 
 // Usage: node <this> <iterations> <maxsize>
 var count = parseInt(process.argv[2], 10) || 20;
-var maxLen = parseInt(process.argv[3], 10) || 100;
+var maxLen = 100;
+var plaintext = null;
+if (process.argv.length >= 4) {
+  if (!isNaN(parseInt(process.argv[3], 10))) {
+    maxLen = parseInt(process.argv[3], 10);
+  } else {
+     plaintext = new Buffer(process.argv[3], 'ascii');
+  }
+}
 var log;
 if (count === 1) {
   log = console.log.bind(console);
 } else {
   log = function() {};
 }
+function logbuf(msg, buf) {
+  if (typeof buf === 'string') {
+    buf = base64.decode(buf);
+  }
+  log(msg + ': [' + buf.length + ']');
+  for (i = 0; i < buf.length; i += 48) {
+    log('    ' + base64.encode(buf.slice(i, i + 48)));
+  }
+}
 
 function encryptDecrypt(length, encryptParams, decryptParams) {
   decryptParams = decryptParams || encryptParams;
-  log("Salt: " + base64.encode(encryptParams.salt));
-  var input = crypto.randomBytes(Math.min(length, maxLen));
+  logbuf('Salt', encryptParams.salt);
+  var input = plaintext || crypto.randomBytes(Math.min(length, maxLen));
   // var input = new Buffer('I am the walrus');
-  log("Input: " + base64.encode(input));
+  logbuf('Input', input);
   var encrypted = ece.encrypt(input, encryptParams);
-  log("Encrypted: " + base64.encode(encrypted));
+  logbuf('Encrypted', encrypted);
   var decrypted = ece.decrypt(encrypted, decryptParams);
-  log("Decrypted: " + base64.encode(decrypted));
+  logbuf('Decrypted', decrypted);
   assert.equal(Buffer.compare(input, decrypted), 0);
-  log("----- OK");
+  log('----- OK');
 }
 
 function useExplicitKey() {
@@ -36,7 +53,20 @@ function useExplicitKey() {
     salt: base64.encode(crypto.randomBytes(16)),
     rs: length.readUInt16BE(0) + 1
   };
-  log('Key: ' + base64.encode(params.key));
+  logbuf('Key', params.key);
+  encryptDecrypt(length.readUInt16BE(2), params);
+}
+
+function authenticationSecret() {
+  var length = crypto.randomBytes(4);
+  var params = {
+    key: base64.encode(crypto.randomBytes(16)),
+    salt: base64.encode(crypto.randomBytes(16)),
+    rs: length.readUInt16BE(0) + 1,
+    authSecret: base64.encode(crypto.randomBytes(16))
+  };
+  logbuf('Key', params.key);
+  logbuf('Context', params.authSecret);
   encryptDecrypt(length.readUInt16BE(2), params);
 }
 
@@ -57,12 +87,12 @@ function detectTruncation() {
     salt: base64.encode(crypto.randomBytes(16)),
     rs: length + 1
   };
-  log("Salt: " + base64.encode(params.salt));
+  logbuf('Salt', params.salt);
   var input = crypto.randomBytes(Math.min(length, maxLen));
-  log("Input: " + base64.encode(input));
+  logbuf('Input', input);
   var encrypted = ece.encrypt(input, params);
   encrypted = encrypted.slice(0, length + 1 + 16);
-  log("Encrypted: " + base64.encode(encrypted));
+  logbuf('Encrypted', encrypted);
   var ok = false;
   try {
     ece.decrypt(encrypted, params);
@@ -94,20 +124,20 @@ function useDH() {
   staticKey.generateKeys();
   assert.equal(staticKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var staticKeyId = staticKey.getPublicKey().toString('hex')
-  ece.saveKey(staticKeyId, staticKey);
+  ece.saveKey(staticKeyId, staticKey, 'P-256');
 
-  log("Receiver private: " + base64.encode(staticKey.getPrivateKey()));
-  log("Receiver public: " + base64.encode(staticKey.getPublicKey()));
+  logbuf('Receiver private', staticKey.getPrivateKey());
+  logbuf('Receiver public', staticKey.getPublicKey());
 
   // the ephemeral key is used by the sender
   var ephemeralKey = crypto.createECDH('prime256v1');
   ephemeralKey.generateKeys();
   assert.equal(ephemeralKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var ephemeralKeyId = ephemeralKey.getPublicKey().toString('hex');
-  ece.saveKey(ephemeralKeyId, ephemeralKey);
+  ece.saveKey(ephemeralKeyId, ephemeralKey, 'P-256');
 
-  log("Sender private: " + base64.encode(ephemeralKey.getPrivateKey()));
-  log("Sender public: " + base64.encode(ephemeralKey.getPublicKey()));
+  logbuf('Sender private', ephemeralKey.getPrivateKey());
+  logbuf('Sender public', ephemeralKey.getPublicKey());
 
   var length = crypto.randomBytes(4);
   var encryptParams = {
@@ -127,11 +157,16 @@ function useDH() {
 
 var i;
 for (i = 0; i < count; ++i) {
-  useExplicitKey();
-  exactlyOneRecord();
-  detectTruncation();
-  useKeyId();
-  useDH();
+  [ useExplicitKey,
+    authenticationSecret,
+    exactlyOneRecord,
+    detectTruncation,
+    useKeyId,
+    useDH,
+  ].forEach(function(f) {
+    log('Test: ' + f.name);
+    f();
+  });
 }
 
 console.log('All tests passed.');

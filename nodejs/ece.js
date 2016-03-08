@@ -4,10 +4,15 @@ var crypto = require('crypto');
 var base64 = require('urlsafe-base64');
 
 var savedKeys = {};
+var keyLabels = {};
 var AES_GCM = 'id-aes128-GCM';
+var PAD_SIZE = 2;
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
 var NONCE_LENGTH = 12;
+var SHA_256_LENGTH = 32;
+var MODE_ENCRYPT = 'encrypt';
+var MODE_DECRYPT = 'decrypt';
 
 function HMAC_hash(key, input) {
   var hmac = crypto.createHmac('sha256', key);
@@ -35,36 +40,95 @@ function HKDF_expand(prk, info, l) {
   return output.slice(0, l);
 }
 
-function extractKey(params) {
-  var secret;
-  if (params.key) {
-    secret = base64.decode(params.key);
-    if (secret.length !== KEY_LENGTH) {
-      throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
-    }
-  } else if (params.dh) { // receiver/decrypt
-    var share = base64.decode(params.dh);
-    var key = savedKeys[params.keyid];
-    secret = key.computeSecret(share);
-  } else if (params.keyid) {
-    secret = savedKeys[params.keyid];
-  }
-  if (!secret) {
-    throw new Error('Unable to determine key');
-  }
-  if (!params.salt) {
+function HKDF(salt, ikm, info, len) {
+  return HKDF_expand(HKDF_extract(salt, ikm), info, len);
+}
+
+function info(base, context) {
+  return Buffer.concat([
+    new Buffer('Content-Encoding: ' + base + '\0', 'ascii'),
+    context
+  ]);
+}
+
+function extractSalt(salt) {
+  if (!salt) {
     throw new Error('A salt is required');
   }
-
-  var salt = base64.decode(params.salt);
+  salt = base64.decode(salt);
   if (salt.length !== KEY_LENGTH) {
     throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
   }
-  var prk = HKDF_extract(salt, secret);
+  return salt;
+}
+
+function lengthPrefix(buffer) {
+  var b = Buffer.concat([ new Buffer(2), buffer ]);
+  b.writeUIntBE(buffer.length, 0, 2);
+  return b;
+}
+
+function extractDH(keyid, dh, mode) {
+  if (!savedKeys[keyid]) {
+    throw new Error('No known DH key for ' + keyid);
+  }
+  if (!keyLabels[keyid]) {
+    throw new Error('No known DH key label for ' + keyid);
+  }
+  var share = base64.decode(dh);
+  var key = savedKeys[keyid];
+  var senderPubKey, receiverPubKey;
+  if (mode === MODE_ENCRYPT) {
+    senderPubKey = key.getPublicKey();
+    receiverPubKey = share;
+  } else if (mode === MODE_DECRYPT) {
+    senderPubKey = share;
+    receiverPubKey = key.getPublicKey();
+  } else {
+    throw new Error('Unknown mode only ' + MODE_ENCRYPT +
+                    ' and ' + MODE_DECRYPT + ' supported');
+  }
   return {
-    key: HKDF_expand(prk, 'Content-Encoding: aesgcm128', KEY_LENGTH),
-    nonce: HKDF_expand(prk, 'Content-Encoding: nonce', NONCE_LENGTH)
+    secret: key.computeSecret(share),
+    context: Buffer.concat([
+      keyLabels[keyid],
+      lengthPrefix(receiverPubKey),
+      lengthPrefix(senderPubKey)
+    ])
   };
+}
+
+function extractSecretAndContext(params, mode) {
+  var result = { secret: null, context: new Buffer(0) };
+  if (params.key) {
+    result.secret = base64.decode(params.key);
+    if (result.secret.length !== KEY_LENGTH) {
+      throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
+    }
+  } else if (params.dh) { // receiver/decrypt
+    result = extractDH(params.keyid, params.dh, mode);
+  } else if (params.keyid) {
+    result.secret = savedKeys[params.keyid];
+  }
+  if (!result.secret) {
+    throw new Error('Unable to determine key');
+  }
+  if (params.authSecret) {
+    result.secret = HKDF(base64.decode(params.authSecret), result.secret,
+                  info('auth', new Buffer(0)), SHA_256_LENGTH);
+  }
+  return result;
+}
+
+function deriveKeyAndNonce(params, mode) {
+  var salt = extractSalt(params.salt);
+  var s = extractSecretAndContext(params, mode);
+  var prk = HKDF_extract(salt, s.secret);
+  var result = {
+    key: HKDF_expand(prk, info('aesgcm128', s.context), KEY_LENGTH),
+    nonce: HKDF_expand(prk, info('nonce', s.context), NONCE_LENGTH)
+  };
+  return result;
 }
 
 function determineRecordSize(params) {
@@ -72,8 +136,9 @@ function determineRecordSize(params) {
   if (isNaN(rs)) {
     return 4096;
   }
-  if (rs <= 1) {
-    throw new Error('The rs parameter has to be greater than 1');
+  var padSize = params.padSize || PAD_SIZE;
+  if (rs <= padSize) {
+    throw new Error('The rs parameter has to be greater than ' + padSize);
   }
   return rs;
 }
@@ -87,22 +152,23 @@ function generateNonce(base, counter) {
   return nonce;
 }
 
-function decryptRecord(key, counter, buffer) {
+function decryptRecord(key, counter, buffer, padSize) {
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createDecipheriv(AES_GCM, key.key, nonce);
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
-  var pad = data.readUInt8(0);
-  if (pad + 1 > data.length) {
+  padSize = padSize || PAD_SIZE
+  var pad = data.readUIntBE(0, padSize);
+  if (pad + padSize > data.length) {
     throw new Error('padding exceeds block size');
   }
   var padCheck = new Buffer(pad);
   padCheck.fill(0);
-  if (padCheck.compare(data.slice(1, 1 + pad)) !== 0) {
+  if (padCheck.compare(data.slice(padSize, padSize + pad)) !== 0) {
     throw new Error('invalid padding');
   }
-  return data.slice(1 + pad);
+  return data.slice(padSize + pad);
 }
 
 // TODO: this really should use the node streams stuff
@@ -117,7 +183,7 @@ function decryptRecord(key, counter, buffer) {
  * saveKey().
  */
 function decrypt(buffer, params) {
-  var key = extractKey(params);
+  var key = deriveKeyAndNonce(params, MODE_DECRYPT);
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
@@ -131,20 +197,22 @@ function decrypt(buffer, params) {
     if (end - start <= TAG_LENGTH) {
       throw new Error('Invalid block: too small at ' + i);
     }
-    var block = decryptRecord(key, i, buffer.slice(start, end));
+    var block = decryptRecord(key, i, buffer.slice(start, end),
+                              params.padSize);
     result = Buffer.concat([result, block]);
     start = end;
   }
   return result;
 }
 
-function encryptRecord(key, counter, buffer, pad) {
+function encryptRecord(key, counter, buffer, pad, padSize) {
   pad = pad || 0;
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
-  var padding = new Buffer(pad + 1);
+  padSize = padSize || PAD_SIZE;
+  var padding = new Buffer(pad + padSize);
   padding.fill(0);
-  padding.writeUIntBE(pad, 0, 1);
+  padding.writeUIntBE(pad, 0, padSize);
   var epadding = gcm.update(padding);
   var ebuffer = gcm.update(buffer);
   gcm.final();
@@ -159,19 +227,33 @@ function encryptRecord(key, counter, buffer, pad) {
  * Encrypt some bytes.  This uses the parameters to determine the key and block
  * size, which are described in the draft.  Note that for encryption, the
  * p256-dh parameter identifies the public share of the recipient and the keyid
- * identifies a local ECDH key pair (created by crypto.createECDH()).
+ * identifies a local DH key pair (created by crypto.createECDH() or
+ * crypto.createDiffieHellman()).
  */
 function encrypt(buffer, params) {
-  var key = extractKey(params);
+  var key = deriveKeyAndNonce(params, MODE_ENCRYPT);
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
+  var padSize = params.padSize || PAD_SIZE;
+  var pad = isNaN(parseInt(params.pad, 10)) ? 0 : parseInt(params.pad, 10);
 
+  // Note the <= here ensures that we write out a padding-only block at the end
+  // of a buffer.
   for (var i = 0; start <= buffer.length; ++i) {
-    var end = Math.min(start + rs - 1, buffer.length);
-    var block = encryptRecord(key, i, buffer.slice(start, end));
+    // Pad so that at least one data byte is in a block.
+    var recordPad = Math.min((1 << (padSize * 8)) - 1, // maximum padding
+                             Math.min(rs - padSize - 1, pad));
+    pad -= recordPad;
+
+    var end = Math.min(start + rs - padSize - recordPad, buffer.length);
+    var block = encryptRecord(key, i, buffer.slice(start, end),
+                              recordPad, padSize);
     result = Buffer.concat([result, block]);
-    start += rs - 1;
+    start += rs - padSize - recordPad;
+  }
+  if (pad) {
+    throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');
   }
   return result;
 }
@@ -179,10 +261,14 @@ function encrypt(buffer, params) {
 /**
  * This function saves a key under the provided identifier.  This is used to
  * save the keys that are used to decrypt and encrypt blobs that are identified
- * by a 'keyid'.
+ * by a 'keyid'.  DH or ECDH keys that are used with the 'dh' parameter need to
+ * include a label (included in 'dhLabel') that identifies them.
  */
-function saveKey(id, key) {
+function saveKey(id, key, dhLabel) {
   savedKeys[id] = key;
+  if (dhLabel) {
+    keyLabels[id] = new Buffer(dhLabel + '\0', 'ascii');
+  }
 }
 
 module.exports = {
