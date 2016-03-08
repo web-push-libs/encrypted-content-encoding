@@ -1,4 +1,4 @@
-import os, struct
+import os, struct, functools
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.backends import default_backend
@@ -9,7 +9,6 @@ import pyelliptic
 
 keys = {}
 labels = {}
-padSize = 2
 
 def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=None):
     def buildInfo(base, context):
@@ -87,7 +86,7 @@ def iv(base, counter):
     (mask,) = struct.unpack("!Q", base[4:])
     return base[:4] + struct.pack("!Q", counter ^ mask)
 
-def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=None):
+def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=None, padSize=2):
     def decryptRecord(key, nonce, counter, buffer):
         decryptor = Cipher(
             algorithms.AES(key),
@@ -95,7 +94,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=Non
             backend=default_backend()
         ).decryptor()
         data = decryptor.update(buffer[:-16]) + decryptor.finalize()
-        (pad,) = struct.unpack("!H", data[0:padSize]);
+        pad = functools.reduce(lambda x, y: x << 8 | y, struct.unpack("!" + ("B" * padSize), data[0:padSize]))
         if data[padSize:padSize+pad] != (b"\x00" * pad):
             raise Exception(u"Bad padding")
         data = data[padSize+pad:]
@@ -117,7 +116,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=Non
         counter += 1
     return result
 
-def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=None):
+def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=None, padSize=2):
     def encryptRecord(key, nonce, counter, buffer):
         encryptor = Cipher(
             algorithms.AES(key),

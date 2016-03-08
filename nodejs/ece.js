@@ -136,8 +136,9 @@ function determineRecordSize(params) {
   if (isNaN(rs)) {
     return 4096;
   }
-  if (rs <= PAD_SIZE) {
-    throw new Error('The rs parameter has to be greater than ' + PAD_SIZE);
+  var padSize = params.padSize || PAD_SIZE;
+  if (rs <= padSize) {
+    throw new Error('The rs parameter has to be greater than ' + padSize);
   }
   return rs;
 }
@@ -151,22 +152,23 @@ function generateNonce(base, counter) {
   return nonce;
 }
 
-function decryptRecord(key, counter, buffer) {
+function decryptRecord(key, counter, buffer, padSize) {
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createDecipheriv(AES_GCM, key.key, nonce);
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
-  var pad = data.readUIntBE(0, PAD_SIZE);
-  if (pad + PAD_SIZE > data.length) {
+  padSize = padSize || PAD_SIZE
+  var pad = data.readUIntBE(0, padSize);
+  if (pad + padSize > data.length) {
     throw new Error('padding exceeds block size');
   }
   var padCheck = new Buffer(pad);
   padCheck.fill(0);
-  if (padCheck.compare(data.slice(PAD_SIZE, PAD_SIZE + pad)) !== 0) {
+  if (padCheck.compare(data.slice(padSize, padSize + pad)) !== 0) {
     throw new Error('invalid padding');
   }
-  return data.slice(PAD_SIZE + pad);
+  return data.slice(padSize + pad);
 }
 
 // TODO: this really should use the node streams stuff
@@ -195,20 +197,22 @@ function decrypt(buffer, params) {
     if (end - start <= TAG_LENGTH) {
       throw new Error('Invalid block: too small at ' + i);
     }
-    var block = decryptRecord(key, i, buffer.slice(start, end));
+    var block = decryptRecord(key, i, buffer.slice(start, end),
+                              params.padSize);
     result = Buffer.concat([result, block]);
     start = end;
   }
   return result;
 }
 
-function encryptRecord(key, counter, buffer, pad) {
+function encryptRecord(key, counter, buffer, pad, padSize) {
   pad = pad || 0;
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
-  var padding = new Buffer(pad + PAD_SIZE);
+  padSize = padSize || PAD_SIZE;
+  var padding = new Buffer(pad + padSize);
   padding.fill(0);
-  padding.writeUIntBE(pad, 0, PAD_SIZE);
+  padding.writeUIntBE(pad, 0, padSize);
   var epadding = gcm.update(padding);
   var ebuffer = gcm.update(buffer);
   gcm.final();
@@ -231,20 +235,22 @@ function encrypt(buffer, params) {
   var rs = determineRecordSize(params);
   var start = 0;
   var result = new Buffer(0);
+  var padSize = params.padSize || PAD_SIZE;
   var pad = isNaN(parseInt(params.pad, 10)) ? 0 : parseInt(params.pad, 10);
 
   // Note the <= here ensures that we write out a padding-only block at the end
   // of a buffer.
   for (var i = 0; start <= buffer.length; ++i) {
     // Pad so that at least one data byte is in a block.
-    var recordPad = Math.min((1 << (PAD_SIZE * 8)) - 1, // maximum padding
-                             Math.min(rs - PAD_SIZE - 1, pad));
+    var recordPad = Math.min((1 << (padSize * 8)) - 1, // maximum padding
+                             Math.min(rs - padSize - 1, pad));
     pad -= recordPad;
 
-    var end = Math.min(start + rs - PAD_SIZE - recordPad, buffer.length);
-    var block = encryptRecord(key, i, buffer.slice(start, end), recordPad);
+    var end = Math.min(start + rs - padSize - recordPad, buffer.length);
+    var block = encryptRecord(key, i, buffer.slice(start, end),
+                              recordPad, padSize);
     result = Buffer.concat([result, block]);
-    start += rs - PAD_SIZE - recordPad;
+    start += rs - padSize - recordPad;
   }
   if (pad) {
     throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');
