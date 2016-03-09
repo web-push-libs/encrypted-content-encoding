@@ -10,16 +10,9 @@ if (process.argv.length < 4) {
   process.exit(2);
 }
 
-var sender = crypto.createECDH('prime256v1');
-sender.generateKeys();
-ece.saveKey('keyid', sender, "P-256");
-
-var salt = base64.encode(crypto.randomBytes(16));
-
 var params = {
   keyid: 'keyid',
-  dh: process.argv[2],
-  salt: salt
+  dh: process.argv[2]
 };
 
 if (process.argv.length > 4) {
@@ -29,9 +22,23 @@ if (process.argv.length > 4) {
   });
 }
 
+var sender = crypto.createECDH('prime256v1');
+sender.generateKeys();
+if (params.senderPrivate) {
+  sender.setPrivateKey(base64.decode(params.senderPrivate));
+}
+if (params.senderPublic) {
+  sender.setPublicKey(base64.decode(params.senderPublic));
+}
+ece.saveKey('keyid', sender, "P-256");
+
+if (!params.salt) {
+  params.salt = base64.encode(crypto.randomBytes(16));
+}
+
+
 console.log("Params: " + JSON.stringify(params, null, 2));
 var result = ece.encrypt(base64.decode(process.argv[3]), params);
 
-console.log("Salt: " + salt);
 console.log("Public Key: " + base64.encode(sender.getPublicKey()));
 console.log("Encrypted Message: " + base64.encode(result));

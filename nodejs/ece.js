@@ -14,6 +14,15 @@ var SHA_256_LENGTH = 32;
 var MODE_ENCRYPT = 'encrypt';
 var MODE_DECRYPT = 'decrypt';
 
+var keylog;
+if (process.env.ECE_KEYLOG === '1') {
+  keylog = function(m, k) {
+    console.warn(m + ' [' + k.length + ']: ' + base64.encode(k));
+  };
+} else {
+  keylog = function() {};
+}
+
 function HMAC_hash(key, input) {
   var hmac = crypto.createHmac('sha256', key);
   hmac.update(input);
@@ -113,9 +122,12 @@ function extractSecretAndContext(params, mode) {
   if (!result.secret) {
     throw new Error('Unable to determine key');
   }
+  keylog('secret', result.secret);
+  keylog('context', result.context);
   if (params.authSecret) {
     result.secret = HKDF(base64.decode(params.authSecret), result.secret,
-                  info('auth', new Buffer(0)), SHA_256_LENGTH);
+                         info('auth', new Buffer(0)), SHA_256_LENGTH);
+    keylog('authsecret', result.secret);
   }
   return result;
 }
@@ -128,6 +140,8 @@ function deriveKeyAndNonce(params, mode) {
     key: HKDF_expand(prk, info('aesgcm128', s.context), KEY_LENGTH),
     nonce: HKDF_expand(prk, info('nonce', s.context), NONCE_LENGTH)
   };
+  keylog('key', result.key);
+  keylog('nonce base', result.nonce);
   return result;
 }
 
@@ -149,15 +163,18 @@ function generateNonce(base, counter) {
   var x = ((m ^ counter) & 0xffffff) +
       ((((m / 0x1000000) ^ (counter / 0x1000000)) & 0xffffff) * 0x1000000);
   nonce.writeUIntBE(x, nonce.length - 6, 6);
+  keylog('nonce' + counter, nonce);
   return nonce;
 }
 
 function decryptRecord(key, counter, buffer, padSize) {
+  keylog('decrypt', buffer);
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createDecipheriv(AES_GCM, key.key, nonce);
   gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
   var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
   data = Buffer.concat([data, gcm.final()]);
+  keylog('decrypted', data);
   padSize = padSize || PAD_SIZE
   var pad = data.readUIntBE(0, padSize);
   if (pad + padSize > data.length) {
@@ -206,6 +223,7 @@ function decrypt(buffer, params) {
 }
 
 function encryptRecord(key, counter, buffer, pad, padSize) {
+  keylog('encrypt', buffer);
   pad = pad || 0;
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
@@ -220,7 +238,9 @@ function encryptRecord(key, counter, buffer, pad, padSize) {
   if (tag.length !== TAG_LENGTH) {
     throw new Error('invalid tag generated');
   }
-  return Buffer.concat([epadding, ebuffer, tag]);
+  var encrypted = Buffer.concat([epadding, ebuffer, tag]);
+  keylog('encrypted', encrypted);
+  return encrypted;
 }
 
 /**
