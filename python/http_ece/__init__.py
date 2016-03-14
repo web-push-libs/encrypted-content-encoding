@@ -63,11 +63,17 @@ def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=None):
         )
         secret = hkdf_auth.derive(secret)
 
+    keyinfo = b"aesgcm"
+    if padSize == 2:
+        keyinfo = b"aesgcm128"
+    elif padSize != 1:
+        raise Exception(u"unable to set context for padSize=" + str(padSize))
+
     hkdf_key = HKDF(
         algorithm=hashes.SHA256(),
         length=16,
         salt=salt,
-        info=buildInfo(b"aesgcm128", context),
+        info=buildInfo(keyinfo, context),
         backend=default_backend()
     )
     hkdf_nonce = HKDF(

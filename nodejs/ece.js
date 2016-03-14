@@ -54,10 +54,12 @@ function HKDF(salt, ikm, info, len) {
 }
 
 function info(base, context) {
-  return Buffer.concat([
+  var result = Buffer.concat([
     new Buffer('Content-Encoding: ' + base + '\0', 'ascii'),
     context
   ]);
+  keylog('info ' + base, result);
+  return result;
 }
 
 function extractSalt(salt) {
@@ -136,8 +138,14 @@ function deriveKeyAndNonce(params, mode) {
   var salt = extractSalt(params.salt);
   var s = extractSecretAndContext(params, mode);
   var prk = HKDF_extract(salt, s.secret);
+  var keyinfo = 'aesgcm';
+  if (params.padSize === 2) {
+    keyinfo = 'aesgcm128';
+  } else if (params.padSize && params.padSize !== 1) {
+    throw new Error('Unable to set context for padSize ' + params.padSize);
+  }
   var result = {
-    key: HKDF_expand(prk, info('aesgcm128', s.context), KEY_LENGTH),
+    key: HKDF_expand(prk, info(keyinfo, s.context), KEY_LENGTH),
     nonce: HKDF_expand(prk, info('nonce', s.context), NONCE_LENGTH)
   };
   keylog('key', result.key);
