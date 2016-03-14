@@ -26,16 +26,19 @@ var sender = crypto.createECDH('prime256v1');
 sender.generateKeys();
 if (params.senderPrivate) {
   sender.setPrivateKey(base64.decode(params.senderPrivate));
+} else {
+  params.senderPrivate = base64.encode(sender.getPrivateKey());
 }
 if (params.senderPublic) {
   sender.setPublicKey(base64.decode(params.senderPublic));
+} else {
+  params.senderPublic = base64.encode(sender.getPublicKey());
 }
 ece.saveKey('keyid', sender, "P-256");
 
 if (!params.salt) {
   params.salt = base64.encode(crypto.randomBytes(16));
 }
-
 
 console.log("Params: " + JSON.stringify(params, null, 2));
 var result = ece.encrypt(base64.decode(process.argv[3]), params);
