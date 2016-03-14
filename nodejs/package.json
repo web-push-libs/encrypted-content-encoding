@@ -1,6 +1,6 @@
 {
   "name": "http_ece",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Encrypted Content-Encoding for HTTP",
   "homepage": "https://github.com/martinthomson/encrypted-content-encoding",
   "bugs": "https://github.com/martinthomson/encrypted-content-encoding/issues",
@@ -15,7 +15,7 @@
   "license": "MIT",
   "main": "./ece.js",
   "scripts": { "test": "node ./test.js" },
-  "engines" : { "node" : ">=0.12" },
+  "engines" : { "node" : ">=4.0.0" },
   "dependencies": {
     "urlsafe-base64": "~1.0.0"
   }
