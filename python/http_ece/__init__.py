@@ -10,7 +10,7 @@ import pyelliptic
 keys = {}
 labels = {}
 
-def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=None):
+def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=None, padSize=2):
     def buildInfo(base, context):
         return b"Content-Encoding: " + base + b"\0" + context
 
@@ -63,24 +63,27 @@ def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=None):
         )
         secret = hkdf_auth.derive(secret)
 
-    keyinfo = b"aesgcm"
     if padSize == 2:
-        keyinfo = b"aesgcm128"
-    elif padSize != 1:
+        keyinfo = buildInfo(b"aesgcm", context)
+        nonceinfo = buildInfo(b"nonce", context)
+    elif padSize == 1:
+        keyinfo = b"Content-Encoding: aesgcm128"
+        nonceinfo = b"Content-Encoding: nonce"
+    else:
         raise Exception(u"unable to set context for padSize=" + str(padSize))
 
     hkdf_key = HKDF(
         algorithm=hashes.SHA256(),
         length=16,
         salt=salt,
-        info=buildInfo(keyinfo, context),
+        info=keyinfo,
         backend=default_backend()
     )
     hkdf_nonce = HKDF(
         algorithm=hashes.SHA256(),
         length=12,
         salt=salt,
-        info=buildInfo(b"nonce", context),
+        info=nonceinfo,
         backend=default_backend()
     )
     result = (hkdf_key.derive(secret), hkdf_nonce.derive(secret))
@@ -108,7 +111,7 @@ def decrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=Non
 
     (key_, nonce_) = deriveKey(mode="decrypt", salt=salt,
                                key=key, keyid=keyid, dh=dh,
-                               authSecret=authSecret)
+                               authSecret=authSecret, padSize=padSize)
     if rs <= padSize:
         raise Exception(u"Record size too small")
     rs += 16 # account for tags
@@ -135,7 +138,7 @@ def encrypt(buffer, salt, key=None, keyid=None, dh=None, rs=4096, authSecret=Non
 
     (key_, nonce_) = deriveKey(mode="encrypt", salt=salt,
                                key=key, keyid=keyid, dh=dh,
-                               authSecret=authSecret)
+                               authSecret=authSecret, padSize=padSize)
     if rs <= padSize:
         raise Exception(u"Record size too small")
     rs -= padSize # account for padding
