@@ -135,18 +135,24 @@ function extractSecretAndContext(params, mode) {
 }
 
 function deriveKeyAndNonce(params, mode) {
+  var padSize = params.padSize || PAD_SIZE;
   var salt = extractSalt(params.salt);
   var s = extractSecretAndContext(params, mode);
   var prk = HKDF_extract(salt, s.secret);
-  var keyinfo = 'aesgcm';
-  if (params.padSize === 2) {
-    keyinfo = 'aesgcm128';
-  } else if (params.padSize && params.padSize !== 1) {
+  var keyInfo;
+  var nonceInfo;
+  if (padSize === 1) {
+    keyInfo = 'Content-Encoding: aesgcm128';
+    nonceInfo = 'Content-Encoding: nonce';
+  } else if (padSize === 2) {
+    keyInfo = info('aesgcm128', s.context);
+    nonceInfo = info('nonce', s.context);
+  } else {
     throw new Error('Unable to set context for padSize ' + params.padSize);
   }
   var result = {
-    key: HKDF_expand(prk, info(keyinfo, s.context), KEY_LENGTH),
-    nonce: HKDF_expand(prk, info('nonce', s.context), NONCE_LENGTH)
+    key: HKDF_expand(prk, keyInfo, KEY_LENGTH),
+    nonce: HKDF_expand(prk, nonceInfo, NONCE_LENGTH)
   };
   keylog('key', result.key);
   keylog('nonce base', result.nonce);
