@@ -145,7 +145,7 @@ function deriveKeyAndNonce(params, mode) {
     keyInfo = 'Content-Encoding: aesgcm128';
     nonceInfo = 'Content-Encoding: nonce';
   } else if (padSize === 2) {
-    keyInfo = info('aesgcm128', s.context);
+    keyInfo = info('aesgcm', s.context);
     nonceInfo = info('nonce', s.context);
   } else {
     throw new Error('Unable to set context for padSize ' + params.padSize);
