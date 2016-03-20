@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='http_ece',
-    version='0.4.3',
+    version='0.4.4',
     author='Martin Thomson',
     author_email='martin.thomson@gmail.com',
     scripts=[],
