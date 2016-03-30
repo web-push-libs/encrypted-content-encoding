@@ -5,7 +5,7 @@ var base64 = require('urlsafe-base64');
 
 var savedKeys = {};
 var keyLabels = {};
-var AES_GCM = 'id-aes128-GCM';
+var AES_GCM = 'aes-128-gcm';
 var PAD_SIZE = 2;
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
