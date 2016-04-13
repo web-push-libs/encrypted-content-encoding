@@ -67,12 +67,8 @@ def deriveKey(mode, salt, key=None, dh=None, keyid=None, authSecret=None, padSiz
         keyinfo = buildInfo(b"aesgcm", context)
         nonceinfo = buildInfo(b"nonce", context)
     elif padSize == 1:
-        if authSecret is not None:
-            keyinfo = buildInfo(b"aesgcm128", context)
-            nonceinfo = buildInfo(b"nonce", context)
-        else:
-            keyinfo = b"Content-Encoding: aesgcm128"
-            nonceinfo = b"Content-Encoding: nonce"
+        keyinfo = b"Content-Encoding: aesgcm128"
+        nonceinfo = b"Content-Encoding: nonce"
     else:
         raise Exception(u"unable to set context for padSize=" + str(padSize))
 

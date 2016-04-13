@@ -142,13 +142,8 @@ function deriveKeyAndNonce(params, mode) {
   var keyInfo;
   var nonceInfo;
   if (padSize === 1) {
-    if (params.authSecret) {
-      keyInfo = info('aesgcm128', s.context);
-      nonceInfo = info('nonce', s.context);
-    } else {
-      keyInfo = 'Content-Encoding: aesgcm128';
-      nonceInfo = 'Content-Encoding: nonce';
-    }
+    keyInfo = 'Content-Encoding: aesgcm128';
+    nonceInfo = 'Content-Encoding: nonce';
   } else if (padSize === 2) {
     keyInfo = info('aesgcm', s.context);
     nonceInfo = info('nonce', s.context);
