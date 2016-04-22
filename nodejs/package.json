@@ -5,8 +5,8 @@
   "homepage": "https://github.com/martinthomson/encrypted-content-encoding",
   "bugs": "https://github.com/martinthomson/encrypted-content-encoding/issues",
   "author": {
-    "name" : "Martin Thomson",
-    "email" : "martin.thomson@gmail.com"
+    "name": "Martin Thomson",
+    "email": "martin.thomson@gmail.com"
   },
   "repository": {
     "type": "git",
@@ -14,9 +14,18 @@
   },
   "license": "MIT",
   "main": "./ece.js",
-  "scripts": { "test": "node ./test.js" },
-  "engines" : { "node" : ">=4.0.0" },
+  "scripts": {
+    "test": "node ./test.js"
+  },
+  "engines": {
+    "node": ">=0.10.0"
+  },
   "dependencies": {
+    "browserify-aes": "^1.0.6",
+    "buffer-compare-shim": "^1.0.0",
+    "buffer-io-shim": "^1.0.0",
+    "create-ecdh": "~4.0.0",
+    "semver": "~5.1.0",
     "urlsafe-base64": "~1.0.0"
   }
 }
