@@ -2,7 +2,6 @@
 
 var crypto = require('crypto');
 var base64 = require('urlsafe-base64');
-require('./shim');
 
 var savedKeys = {};
 var keyLabels = {};
@@ -56,8 +55,7 @@ function HKDF(salt, ikm, info, len) {
 
 function info(base, context) {
   var result = Buffer.concat([
-    new Buffer('Content-Encoding: ' + base, 'ascii'),
-    new Buffer('\0'),
+    new Buffer('Content-Encoding: ' + base + '\0', 'ascii'),
     context
   ]);
   keylog('info ' + base, result);
@@ -306,8 +304,7 @@ function encrypt(buffer, params) {
 function saveKey(id, key, dhLabel) {
   savedKeys[id] = key;
   if (dhLabel) {
-    keyLabels[id] = Buffer.concat([new Buffer(dhLabel, 'ascii'),
-                                   new Buffer('\0')]);
+    keyLabels[id] = new Buffer(dhLabel + '\0', 'ascii');
   }
 }
 

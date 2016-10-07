@@ -18,14 +18,9 @@
     "test": "node ./test.js"
   },
   "engines": {
-    "node": ">=0.10.0"
+    "node": ">=4"
   },
   "dependencies": {
-    "browserify-aes": "^1.0.6",
-    "buffer-compare-shim": "^1.0.0",
-    "buffer-io-shim": "^1.0.0",
-    "create-ecdh": "~4.0.0",
-    "semver": "~5.1.0",
     "urlsafe-base64": "~1.0.0"
   }
 }
