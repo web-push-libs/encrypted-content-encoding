@@ -8,6 +8,10 @@
     "name": "Martin Thomson",
     "email": "martin.thomson@gmail.com"
   },
+  "contributors": [{
+    "name": Marco Castelluccio",
+    "email": "mcastelluccio@mozilla.com"
+  }],
   "repository": {
     "type": "git",
     "url": "https://github.com/martinthomson/encrypted-content-encoding.git"
