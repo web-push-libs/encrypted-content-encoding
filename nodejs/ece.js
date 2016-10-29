@@ -18,9 +18,10 @@ var keylog;
 if (process.env.ECE_KEYLOG === '1') {
   keylog = function(m, k) {
     console.warn(m + ' [' + k.length + ']: ' + base64.encode(k));
+    return k;
   };
 } else {
-  keylog = function() {};
+  keylog = function(m, k) { return k; };
 }
 
 function HMAC_hash(key, input) {
@@ -110,7 +111,6 @@ function extractSecretAndContext(header, mode) {
     result.secret = savedKeys[header.keyid];
   }
   if (!result.secret) {
-    console.warn(header);
     throw new Error('Unable to determine key');
   }
   keylog('secret', result.secret);
@@ -176,8 +176,9 @@ function extractSalt(salt) {
 }
 
 /* Used when decrypting aes128gcm to populate the header values. */
-function readHeader(params, buffer) {
+function readHeader(buffer, params) {
   var idsz = buffer.readUIntBE(20, 1);
+  keylog('header', buffer.slice(0, 21 + idsz));
   return {
     type: 'aes128gcm',
     salt: buffer.slice(0, KEY_LENGTH),
@@ -185,13 +186,13 @@ function readHeader(params, buffer) {
     keyid: buffer.slice(21, 21 + idsz).toString('utf-8'),
     key: params.key ? base64.decode(params.key) : undefined,
     dh: params.dh ? base64.decode(params.dh) : undefined,
-    authSecret: params.authSecret ? base64.decode(params.authSecret) : undefined
+    authSecret: params.authSecret ? base64.decode(params.authSecret) : undefined,
+    headerLength: 21 + idsz
   };
 }
 
 /* Used when decrypting to populate the header values for aesgcm[128]. */
 function parseParams(params) {
-  console.warn(params);
   var type = (params.padSize === 1) ? 'aesgcm128' : 'aesgcm';
   return {
     type: type,
@@ -225,10 +226,6 @@ function decryptRecord(key, counter, buffer, header) {
   var padSize = PAD_SIZE[header.type];
   var pad = data.readUIntBE(0, padSize);
   if (pad + padSize > data.length) {
-    console.warn(header);
-    console.warn(pad);
-    console.warn(padSize);
-    console.warn(data.length);
     throw new Error('padding exceeds block size');
   }
   var padCheck = new Buffer(pad);
@@ -258,7 +255,7 @@ function decrypt(buffer, params) {
     header = readHeader(buffer, params);
   }
   var key = deriveKeyAndNonce(header, MODE_DECRYPT);
-  buffer = buffer.slice(header.len);
+  buffer = buffer.slice(header.headerLength || 0);
   var start = 0;
   var result = new Buffer(0);
 
@@ -294,9 +291,7 @@ function encryptRecord(key, counter, buffer, pad, padSize) {
   if (tag.length !== TAG_LENGTH) {
     throw new Error('invalid tag generated');
   }
-  var encrypted = Buffer.concat([epadding, ebuffer, tag]);
-  keylog('encrypted', encrypted);
-  return encrypted;
+  return keylog('encrypted', Buffer.concat([epadding, ebuffer, tag]));
 }
 
 function encodeHeader(header) {
@@ -307,7 +302,7 @@ function encodeHeader(header) {
   }
   ints.writeUIntBE(header.rs, 0, 4);
   ints.writeUIntBE(keyid.length, 4, 1);
-  return Buffer.concat([header.salt, ints, keyid]);
+  return keylog('header', Buffer.concat([header.salt, ints, keyid]));
 }
 
 /**

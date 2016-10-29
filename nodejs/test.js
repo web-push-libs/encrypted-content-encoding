@@ -5,9 +5,10 @@ var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
-// Usage: node <this> <iterations> <maxsize>
+// Usage: node <this> <iterations> <maxsize|plaintext>
 var count = parseInt(process.argv[2], 10) || 20;
 var maxLen = 100;
+var minLen = 3;
 var plaintext = null;
 if (process.argv.length >= 4) {
   if (!isNaN(parseInt(process.argv[3], 10))) {
@@ -41,10 +42,14 @@ function validate() {
   });
 }
 
-function encryptDecrypt(length, encryptParams, decryptParams) {
-  decryptParams = decryptParams || encryptParams;
-  logbuf('Salt', encryptParams.salt);
-  var input = plaintext || crypto.randomBytes(Math.min(length, maxLen));
+function encryptDecrypt(length, encryptParams, decryptParams, oldVersion) {
+  if (oldVersion) {
+    decryptParams.salt = base64.encode(crypto.randomBytes(16));
+    encryptParams.salt = decryptParams.salt;
+    logbuf('Salt', encryptParams.salt);
+  }
+  var input = plaintext ||
+      crypto.randomBytes(Math.max(minLen, Math.min(length, maxLen)));
   // var input = new Buffer('I am the walrus');
   logbuf('Input', input);
   var encrypted = ece.encrypt(input, encryptParams);
@@ -55,52 +60,57 @@ function encryptDecrypt(length, encryptParams, decryptParams) {
   log('----- OK');
 }
 
-function useExplicitKey() {
-  var length = crypto.randomBytes(4);
+function useExplicitKey(oldVersion) {
+  var length = crypto.randomBytes(4).readUInt16BE(0);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
-    salt: base64.encode(crypto.randomBytes(16)),
-    rs: length.readUInt16BE(0) + 1
+    rs: length + minLen
   };
   logbuf('Key', params.key);
-  encryptDecrypt(length.readUInt16BE(2), params);
+  encryptDecrypt(length, params, params, oldVersion);
 }
 
-function authenticationSecret() {
-  var length = crypto.randomBytes(4);
+function authenticationSecret(oldVersion) {
+  var length = crypto.randomBytes(4).readUInt16BE(0);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
-    salt: base64.encode(crypto.randomBytes(16)),
-    rs: length.readUInt16BE(0) + 1,
+    rs: length + minLen,
     authSecret: base64.encode(crypto.randomBytes(16))
   };
   logbuf('Key', params.key);
   logbuf('Context', params.authSecret);
-  encryptDecrypt(length.readUInt16BE(2), params);
+  encryptDecrypt(length, params, params, oldVersion);
 }
 
-function exactlyOneRecord() {
-  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
+function exactlyOneRecord(oldVersion) {
+  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0) + 1, maxLen);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
-    salt: base64.encode(crypto.randomBytes(16)),
-    rs: length + 1
+    rs: length + 2 // add exactly the padding
   };
-  encryptDecrypt(length, params);
+  encryptDecrypt(length, params, params, oldVersion);
 }
 
-function detectTruncation() {
-  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
+function detectTruncation(oldVersion) {
+  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0) + minLen, maxLen);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
-    salt: base64.encode(crypto.randomBytes(16)),
-    rs: length + 1
+    rs: length // so we get two records
   };
-  logbuf('Salt', params.salt);
+  var headerLen;
+  if (oldVersion) {
+    params.salt = base64.encode(crypto.randomBytes(16));
+    logbuf('Salt', params.salt);
+    headerLen = 0;
+  } else {
+    headerLen = 21; // no keyid
+  }
   var input = crypto.randomBytes(Math.min(length, maxLen));
   logbuf('Input', input);
   var encrypted = ece.encrypt(input, params);
-  encrypted = encrypted.slice(0, length + 1 + 16);
+  var chunkLen = headerLen + params.rs + 16;
+  assert.ok(chunkLen < encrypted.length);
+  encrypted = encrypted.slice(0, chunkLen);
   logbuf('Encrypted', encrypted);
   var ok = false;
   try {
@@ -114,20 +124,19 @@ function detectTruncation() {
   }
 }
 
-function useKeyId() {
-  var length = crypto.randomBytes(4);
+function useKeyId(oldVersion) {
+  var length = crypto.randomBytes(4).readUInt16BE(0);
   var keyid = base64.encode(crypto.randomBytes(16));
   var key = crypto.randomBytes(16);
   ece.saveKey(keyid, key);
   var params = {
     keyid: keyid,
-    salt: base64.encode(crypto.randomBytes(16)),
-    rs: length.readUInt16BE(0) + 1
+    rs: length + minLen
   };
-  encryptDecrypt(length.readUInt16BE(2), params);
+  encryptDecrypt(length, params, params, oldVersion);
 }
 
-function useDH() {
+function useDH(oldVersion) {
   // the static key is used by the receiver
   var staticKey = crypto.createECDH('prime256v1');
   staticKey.generateKeys();
@@ -148,12 +157,12 @@ function useDH() {
   logbuf('Sender private', ephemeralKey.getPrivateKey());
   logbuf('Sender public', ephemeralKey.getPublicKey());
 
-  var length = crypto.randomBytes(4);
+  var length = crypto.randomBytes(4).readUInt16BE(0);
   var encryptParams = {
     keyid: ephemeralKeyId,
     dh: base64.encode(staticKey.getPublicKey()),
     salt: base64.encode(crypto.randomBytes(16)),
-    rs: length.readUInt16BE(0) + 1
+    rs: length + minLen
   };
   var decryptParams = {
     keyid: staticKeyId,
@@ -161,21 +170,23 @@ function useDH() {
     salt: encryptParams.salt,
     rs: encryptParams.rs
   };
-  encryptDecrypt(length.readUInt16BE(2), encryptParams, decryptParams);
+  encryptDecrypt(length, encryptParams, decryptParams, oldVersion);
 }
 
 validate();
 var i;
 for (i = 0; i < count; ++i) {
-  [ useExplicitKey,
-    authenticationSecret,
-    exactlyOneRecord,
-    detectTruncation,
-    useKeyId,
-    useDH,
-  ].forEach(function(f) {
-    log('Test: ' + f.name);
-    f();
+  [ true, false ].forEach(function(oldVersion) {
+    [ useExplicitKey,
+      authenticationSecret,
+      exactlyOneRecord,
+      detectTruncation,
+      useKeyId,
+      useDH,
+    ].forEach(function(f) {
+      log((oldVersion ? 'aesgcm' : 'aes128gcm') + ' Test: ' + f.name);
+      f(oldVersion);
+    });
   });
 }
 
