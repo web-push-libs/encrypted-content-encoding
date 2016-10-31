@@ -210,7 +210,7 @@ function deriveKeyAndNonce(header, mode) {
     secret = s.secret;
   } else if (header.type === 'aes128gcm') {
     // latest
-    keyInfo = Buffer.from('Content-Encoding: aesgcm128\0');
+    keyInfo = Buffer.from('Content-Encoding: aes128gcm\0');
     nonceInfo = Buffer.from('Content-Encoding: nonce\0');
     secret = extractSecret(header, mode);
   } else {
