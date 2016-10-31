@@ -48,6 +48,12 @@ function encryptDecrypt(length, encryptParams, decryptParams, oldVersion) {
     encryptParams.salt = decryptParams.salt;
     logbuf('Salt', encryptParams.salt);
   }
+
+  // These need agreement.
+  assert.equal(encryptParams.salt, decryptParams.salt);
+  assert.equal(encryptParams.rs, decryptParams.rs);
+  assert.equal(encryptParams.authSecret, decryptParams.authSecret);
+
   var input = plaintext ||
       crypto.randomBytes(Math.max(minLen, Math.min(length, maxLen)));
   // var input = new Buffer('I am the walrus');
@@ -128,10 +134,17 @@ function useKeyId(oldVersion) {
   var length = crypto.randomBytes(4).readUInt16BE(0);
   var keyid = base64.encode(crypto.randomBytes(16));
   var key = crypto.randomBytes(16);
-  ece.saveKey(keyid, key);
+  var keymap;
+  if (oldVersion) {
+    ece.saveKey(keyid, key);
+  } else {
+    keymap = {};
+    keymap[keyid] = key;
+  }
   var params = {
     keyid: keyid,
-    rs: length + minLen
+    rs: length + minLen,
+    keymap: keymap
   };
   encryptDecrypt(length, params, params, oldVersion);
 }
@@ -142,7 +155,9 @@ function useDH(oldVersion) {
   staticKey.generateKeys();
   assert.equal(staticKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var staticKeyId = staticKey.getPublicKey().toString('hex')
-  ece.saveKey(staticKeyId, staticKey, 'P-256');
+  if (oldVersion) {
+    ece.saveKey(staticKeyId, staticKey, 'P-256');
+  }
 
   logbuf('Receiver private', staticKey.getPrivateKey());
   logbuf('Receiver public', staticKey.getPublicKey());
@@ -152,23 +167,27 @@ function useDH(oldVersion) {
   ephemeralKey.generateKeys();
   assert.equal(ephemeralKey.getPublicKey()[0], 4, 'is an uncompressed point');
   var ephemeralKeyId = ephemeralKey.getPublicKey().toString('hex');
-  ece.saveKey(ephemeralKeyId, ephemeralKey, 'P-256');
+  if (oldVersion) {
+    ece.saveKey(ephemeralKeyId, ephemeralKey, 'P-256');
+  }
 
   logbuf('Sender private', ephemeralKey.getPrivateKey());
   logbuf('Sender public', ephemeralKey.getPublicKey());
 
   var length = crypto.randomBytes(4).readUInt16BE(0);
   var encryptParams = {
-    keyid: ephemeralKeyId,
-    dh: base64.encode(staticKey.getPublicKey()),
-    salt: base64.encode(crypto.randomBytes(16)),
-    rs: length + minLen
+    keyid: oldVersion ? staticKeyId : 'k',
+    dh: base64.encode(ephemeralKey.getPublicKey()),
+    authSecret: base64.encode(crypto.randomBytes(16)),
+    rs: length + minLen,
+    keymap: { k: staticKey }
   };
   var decryptParams = {
-    keyid: staticKeyId,
-    dh: base64.encode(ephemeralKey.getPublicKey()),
-    salt: encryptParams.salt,
-    rs: encryptParams.rs
+    keyid: oldVersion ? ephemeralKeyId : 'k',
+    dh: base64.encode(staticKey.getPublicKey()),
+    authSecret: encryptParams.authSecret,
+    rs: encryptParams.rs,
+    keymap: { k: ephemeralKey }
   };
   encryptDecrypt(length, encryptParams, decryptParams, oldVersion);
 }

@@ -6,7 +6,7 @@ var ece = require('./ece.js');
 
 if (process.argv.length < 7) {
   console.warn('Usage: ' + process.argv.slice(0, 2).join(' ') +
-               ' <receiver-private> <receiver-public> <sender-public> <salt> <message> [JSON args]');
+               ' <auth-secret> <receiver-private> <receiver-public> <sender-public> <message> [JSON args]');
   process.exit(2);
 }
 
@@ -16,14 +16,16 @@ var receiver = crypto.createECDH('prime256v1');
 // 2. it barfs when you try to access the public key, even after you set it
 // This hack squelches the complaints at the cost of a few wasted cycles
 receiver.generateKeys();
-receiver.setPublicKey(base64.decode(process.argv[3]));
-receiver.setPrivateKey(base64.decode(process.argv[2]));
-ece.saveKey('keyid', receiver, "P-256");
+receiver.setPublicKey(base64.decode(process.argv[4]));
+receiver.setPrivateKey(base64.decode(process.argv[3]));
+var keymap = {};
+keymap[''] = receiver;
 
 var params = {
-  keyid: 'keyid',
-  dh: process.argv[4],
-  salt: process.argv[5]
+  keyid: '',
+  authSecret: process.argv[2],
+  dh: process.argv[5],
+  keymap: keymap
 };
 
 if (process.argv.length > 7) {

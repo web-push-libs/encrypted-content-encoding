@@ -52,10 +52,14 @@ function HMAC_hash(key, input) {
 
 /* HKDF as defined in RFC5869, using SHA-256 */
 function HKDF_extract(salt, ikm) {
-  return HMAC_hash(salt, ikm);
+  keylog('salt', salt);
+  keylog('ikm', ikm);
+  return keylog('extract', HMAC_hash(salt, ikm));
 }
 
 function HKDF_expand(prk, info, l) {
+  keylog('prk', prk);
+  keylog('info', info);
   var output = new Buffer(0);
   var T = new Buffer(0);
   info = new Buffer(info, 'ascii');
@@ -67,7 +71,7 @@ function HKDF_expand(prk, info, l) {
     output = Buffer.concat([output, T]);
   }
 
-  return output.slice(0, l);
+  return keylog('expand', output.slice(0, l));
 }
 
 function HKDF(salt, ikm, info, len) {
@@ -136,33 +140,83 @@ function extractSecretAndContext(header, mode) {
   keylog('secret', result.secret);
   keylog('context', result.context);
   if (header.authSecret) {
-    result.secret = HKDF(base64.decode(header.authSecret), result.secret,
+    result.secret = HKDF(header.authSecret, result.secret,
                          info('auth', new Buffer(0)), SHA_256_LENGTH);
     keylog('authsecret', result.secret);
   }
   return result;
 }
 
+function extractSecret(header, mode) {
+  if (header.key) {
+    if (header.key.length !== KEY_LENGTH) {
+      throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
+    }
+    return keylog('secret key', header.key);
+  }
+
+  // We need a key identifier for all the rest.
+  var key = header.keymap && header.keymap[header.keyid];
+  if (!key) {
+    throw new Error('No saved key (keyid: "' + header.keyid + '")');
+  }
+
+  // Simple key
+  if (!header.dh) {
+    return keylog('secret saved', key);
+  }
+
+  // We are doing DH
+  var senderPubKey, receiverPubKey;
+  if (mode === MODE_ENCRYPT) {
+    senderPubKey = key.getPublicKey();
+    receiverPubKey = header.dh;
+  } else if (mode === MODE_DECRYPT) {
+    senderPubKey = header.dh;
+    receiverPubKey = key.getPublicKey();
+  } else {
+    throw new Error('Unknown mode only ' + MODE_ENCRYPT +
+                    ' and ' + MODE_DECRYPT + ' supported');
+  }
+  keylog('authsecret', header.authSecret);
+  return keylog('secret dh',
+                HKDF(header.authSecret || Buffer.from(''),
+                     key.computeSecret(header.dh),
+                     Buffer.concat([
+                       Buffer.from('WebPush: info\0'),
+                       receiverPubKey,
+                       senderPubKey
+                     ]),
+                     SHA_256_LENGTH));
+}
+
 function deriveKeyAndNonce(header, mode) {
   if (!header.salt) {
     throw new Error('must include a salt parameter for ' + header.type);
   }
-  var s = extractSecretAndContext(header, mode);
-  var prk = HKDF_extract(header.salt, s.secret);
   var keyInfo;
   var nonceInfo;
+  var secret;
   if (header.type === 'aesgcm128') {
+    // really old
     keyInfo = 'Content-Encoding: aesgcm128';
     nonceInfo = 'Content-Encoding: nonce';
+    secret = extractSecretAndContext(header, mode).secret;
   } else if (header.type === 'aesgcm') {
+    // old
+    var s = extractSecretAndContext(header, mode);
     keyInfo = info('aesgcm', s.context);
     nonceInfo = info('nonce', s.context);
+    secret = s.secret;
   } else if (header.type === 'aes128gcm') {
-    keyInfo = 'Content-Encoding: aesgcm128\0';
-    nonceInfo = 'Content-Encoding: nonce\0';
+    // latest
+    keyInfo = Buffer.from('Content-Encoding: aesgcm128\0');
+    nonceInfo = Buffer.from('Content-Encoding: nonce\0');
+    secret = extractSecret(header, mode);
   } else {
     throw new Error('Unable to set context for mode ' + params.type);
   }
+  var prk = HKDF_extract(header.salt, secret);
   var result = {
     key: HKDF_expand(prk, keyInfo, KEY_LENGTH),
     nonce: HKDF_expand(prk, nonceInfo, NONCE_LENGTH)
@@ -172,57 +226,56 @@ function deriveKeyAndNonce(header, mode) {
   return result;
 }
 
-function determineRecordSize(rs, type) {
-  rs = parseInt(rs, 10);
-  if (isNaN(rs)) {
-    return 4096;
+function fillCommonParams(header, params) {
+  if (params.key) {
+    header.key = base64.decode(params.key);
   }
-  var padSize = PAD_SIZE[type];
-  if (rs <= padSize) {
-    throw new Error('The rs parameter has to be greater than ' + padSize);
+  header.keymap = params.keymap;
+  if (params.dh) {
+    header.dh = base64.decode(params.dh);
   }
-  return rs;
-}
-
-function extractSalt(salt) {
-  if (!salt) {
-    throw new Error('A salt is required');
+  if (params.authSecret) {
+    header.authSecret = base64.decode(params.authSecret);
   }
-  salt = base64.decode(salt);
-  if (salt.length !== KEY_LENGTH) {
-    throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
-  }
-  return salt;
+  return header;
 }
 
 /* Used when decrypting aes128gcm to populate the header values. */
 function readHeader(buffer, params) {
   var idsz = buffer.readUIntBE(20, 1);
-  keylog('header', buffer.slice(0, 21 + idsz));
-  return {
+  var header = {
     type: 'aes128gcm',
     salt: buffer.slice(0, KEY_LENGTH),
     rs: buffer.readUIntBE(KEY_LENGTH, 4),
     keyid: buffer.slice(21, 21 + idsz).toString('utf-8'),
-    key: params.key ? base64.decode(params.key) : undefined,
-    dh: params.dh ? base64.decode(params.dh) : undefined,
-    authSecret: params.authSecret ? base64.decode(params.authSecret) : undefined,
     headerLength: 21 + idsz
   };
+  return fillCommonParams(header, params);
 }
 
-/* Used when decrypting to populate the header values for aesgcm[128]. */
+/* Used when decrypting to populate the header values for aesgcm[128]. Used also
+ * to parse the |param| argument when encrypting. */
 function parseParams(params) {
-  var type = (params.padSize === 1) ? 'aesgcm128' : 'aesgcm';
-  return {
-    type: type,
-    salt: params.salt ? extractSalt(params.salt) : undefined,
-    rs: determineRecordSize(params.rs, type),
+  var header = {
+    type: (params.padSize === 1) ? 'aesgcm128' : 'aesgcm',
     keyid: params.keyid,
-    key: params.key ? base64.decode(params.key) : undefined,
-    dh: params.dh ? base64.decode(params.dh) : undefined,
-    authSecret: params.authSecret ? base64.decode(params.authSecret) : undefined
+    headerLength: 0
   };
+  header.rs = parseInt(params.rs, 10);
+  if (isNaN(header.rs)) {
+    header.rs = 4096;
+  }
+  if (header.rs <= PAD_SIZE[header.type]) {
+    throw new Error('The rs parameter has to be greater than ' +
+                    PAD_SIZE[header.type]);
+  }
+  if (params.salt) {
+    header.salt = base64.decode(params.salt);
+    if (header.salt.length !== KEY_LENGTH) {
+      throw new Error('The salt parameter must be ' + KEY_LENGTH + ' bytes');
+    }
+  }
+  return fillCommonParams(header, params);
 }
 
 function generateNonce(base, counter) {
@@ -261,11 +314,14 @@ function decryptRecord(key, counter, buffer, header) {
 /**
  * Decrypt some bytes.  This uses the parameters to determine the key and block
  * size, which are described in the draft.  Binary values are base64url encoded.
- * For an explicit key that key is used.  For a keyid on its own, the value of
- * the key is a buffer that is stored with saveKey().  For ECDH, the p256-dh
- * parameter identifies the public share of the recipient and the keyid is
- * anECDH key pair (created by crypto.createECDH()) that is stored using
- * saveKey().
+ *
+ * If |params.key| is specified, that value is used as the key.
+ *
+ * If |params.keyid| is specified without |params.dh|, the keyid value is used
+ * to lookup the |params.keymap| for a buffer containing the key.
+ *
+ * For ECDH, |params.dh| includes the public key of the sender.  The ECDH key
+ * pair used to decrypt is looked up using |params.keymap[params.keyid]|.
  */
 function decrypt(buffer, params) {
   var header;
@@ -322,15 +378,21 @@ function encodeHeader(header) {
   }
   ints.writeUIntBE(header.rs, 0, 4);
   ints.writeUIntBE(keyid.length, 4, 1);
-  return keylog('header', Buffer.concat([header.salt, ints, keyid]));
+  return Buffer.concat([header.salt, ints, keyid]);
 }
 
 /**
  * Encrypt some bytes.  This uses the parameters to determine the key and block
- * size, which are described in the draft.  Note that for encryption, the
- * p256-dh parameter identifies the public share of the recipient and the keyid
- * identifies a local DH key pair (created by crypto.createECDH() or
- * crypto.createDiffieHellman()).
+ * size, which are described in the draft.
+ *
+ * If |params.key| is specified, that value is used as the key.
+ *
+ * If |params.keyid| is specified without |params.dh|, the keyid value is used
+ * to lookup the |params.keymap| for a buffer containing the key.
+ *
+ * For Diffie-Hellman, |params.dh| includes the public key of the receiver.  The
+ * ECDH key pair used to encrypt is looked up using |params.keymap[params.keyid]|.
+ * Key pairs can be created using |crypto.createECDH()|.
  */
 function encrypt(buffer, params) {
   if (!Buffer.isBuffer(buffer)) {
@@ -346,7 +408,6 @@ function encrypt(buffer, params) {
     header.salt = crypto.randomBytes(KEY_LENGTH);
     result = encodeHeader(header);
   }
-  header.rs = determineRecordSize(params.rs, header.type);
 
   var key = deriveKeyAndNonce(header, MODE_ENCRYPT);
   var start = 0;
@@ -374,10 +435,14 @@ function encrypt(buffer, params) {
 }
 
 /**
- * This function saves a key under the provided identifier.  This is used to
- * save the keys that are used to decrypt and encrypt blobs that are identified
- * by a 'keyid'.  DH or ECDH keys that are used with the 'dh' parameter need to
- * include a label (included in 'dhLabel') that identifies them.
+ * This function saves a key under the provided identifier.  This is only used
+ * by aesgcm and aesgcm128 codings.  For the aes128gcm coding, use the |keymap|
+ * parameter to encrypt() and decrypt().
+ *
+ * This is used to save the keys that are used to decrypt and encrypt blobs that
+ * are identified by a 'keyid'.  DH or ECDH keys that are used with the 'dh'
+ * parameter need to include a label (included in 'dhLabel') that identifies
+ * them.
  */
 function saveKey(id, key, dhLabel) {
   savedKeys[id] = key;
