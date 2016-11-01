@@ -4,17 +4,24 @@ var crypto = require('crypto');
 var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
+var fs = require('fs');
 
-// Usage: node <this> <iterations> <maxsize>
+var DUMP_FILE = '../encrypt_data.json';
+var dump_data = {};
+
+// Usage: node <this> <iterations> <maxsize> <dump>
 var count = parseInt(process.argv[2], 10) || 20;
 var maxLen = 100;
 var plaintext = null;
+var dump = false;  // flag to dump encrypt/decrypted values to JSON file for cross library checks.
+
 if (process.argv.length >= 4) {
   if (!isNaN(parseInt(process.argv[3], 10))) {
     maxLen = parseInt(process.argv[3], 10);
   } else {
      plaintext = new Buffer(process.argv[3], 'ascii');
   }
+  dump = ( process.argv.indexOf('dump') != -1)
 }
 var log;
 if (count === 1) {
@@ -32,16 +39,26 @@ function logbuf(msg, buf) {
   }
 }
 
+// Validate that the encryption function only accepts Buffers
 function validate() {
   ['hello', null, 1, NaN, [], {}].forEach(function(v) {
     try {
-      encrypt('hello', {});
-      throw new Error('should insist on a buffer');
-    } catch (e) {}
+      ece.encrypt(v, {});
+    } catch (e) {
+      if (e.toString() != "Error: buffer argument must be a Buffer") {
+        throw new Error("encrypt failed to reject " + JSON.stringify(v));
+      }
+    }
   });
 }
 
-function encryptDecrypt(length, encryptParams, decryptParams) {
+function dumpData(data){
+  var version = data.version;
+  delete(data.version);
+  dump_data[version] = data;
+}
+
+function encryptDecrypt(length, encryptParams, decryptParams, version, keyData) {
   decryptParams = decryptParams || encryptParams;
   logbuf('Salt', encryptParams.salt);
   var input = plaintext || crypto.randomBytes(Math.min(length, maxLen));
@@ -51,11 +68,26 @@ function encryptDecrypt(length, encryptParams, decryptParams) {
   logbuf('Encrypted', encrypted);
   var decrypted = ece.decrypt(encrypted, decryptParams);
   logbuf('Decrypted', decrypted);
+  if (dump) {
+    var data = {
+      version: version,
+      input: base64.encode(input),
+      encrypted: base64.encode(encrypted),
+      params: {
+        encrypted: encryptParams,
+        decrypt: decryptParams,
+      }
+    };
+    if (keyData) {
+      data.keys = keyData;
+    }
+    dumpData(data);
+  }
   assert.equal(Buffer.compare(input, decrypted), 0);
   log('----- OK');
 }
 
-function useExplicitKey() {
+function useExplicitKey(version) {
   var length = crypto.randomBytes(4);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
@@ -63,10 +95,10 @@ function useExplicitKey() {
     rs: length.readUInt16BE(0) + 1
   };
   logbuf('Key', params.key);
-  encryptDecrypt(length.readUInt16BE(2), params);
+  encryptDecrypt(length.readUInt16BE(2), params, params, version);
 }
 
-function authenticationSecret() {
+function authenticationSecret(version) {
   var length = crypto.randomBytes(4);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
@@ -76,20 +108,20 @@ function authenticationSecret() {
   };
   logbuf('Key', params.key);
   logbuf('Context', params.authSecret);
-  encryptDecrypt(length.readUInt16BE(2), params);
+  encryptDecrypt(length.readUInt16BE(2), params, params, version);
 }
 
-function exactlyOneRecord() {
+function exactlyOneRecord(version) {
   var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
     salt: base64.encode(crypto.randomBytes(16)),
     rs: length + 1
   };
-  encryptDecrypt(length, params);
+  encryptDecrypt(length, params, params, version);
 }
 
-function detectTruncation() {
+function detectTruncation(version) {
   var length = Math.min(crypto.randomBytes(2).readUInt16BE(0), maxLen);
   var params = {
     key: base64.encode(crypto.randomBytes(16)),
@@ -104,7 +136,7 @@ function detectTruncation() {
   logbuf('Encrypted', encrypted);
   var ok = false;
   try {
-    ece.decrypt(encrypted, params);
+    ece.decrypt(encrypted, params, params, version);
   } catch (e) {
     log('----- OK: ' + e);
     ok = true;
@@ -114,7 +146,7 @@ function detectTruncation() {
   }
 }
 
-function useKeyId() {
+function useKeyId(version) {
   var length = crypto.randomBytes(4);
   var keyid = base64.encode(crypto.randomBytes(16));
   var key = crypto.randomBytes(16);
@@ -124,15 +156,15 @@ function useKeyId() {
     salt: base64.encode(crypto.randomBytes(16)),
     rs: length.readUInt16BE(0) + 1
   };
-  encryptDecrypt(length.readUInt16BE(2), params);
+  encryptDecrypt(length.readUInt16BE(2), params, params, version);
 }
 
-function useDH() {
+function useDH(version) {
   // the static key is used by the receiver
   var staticKey = crypto.createECDH('prime256v1');
   staticKey.generateKeys();
   assert.equal(staticKey.getPublicKey()[0], 4, 'is an uncompressed point');
-  var staticKeyId = staticKey.getPublicKey().toString('hex')
+  var staticKeyId = staticKey.getPublicKey().toString('hex');
   ece.saveKey(staticKeyId, staticKey, 'P-256');
 
   logbuf('Receiver private', staticKey.getPrivateKey());
@@ -161,22 +193,44 @@ function useDH() {
     salt: encryptParams.salt,
     rs: encryptParams.rs
   };
-  encryptDecrypt(length.readUInt16BE(2), encryptParams, decryptParams);
+  // keyData is used for cross library verification dumps
+  var keyData = {
+    sender: {
+      private: base64.encode(ephemeralKey.getPrivateKey()),
+      public: base64.encode(ephemeralKey.getPublicKey())
+    },
+    receiver: {
+      private: base64.encode(staticKey.getPrivateKey()),
+      public: base64.encode(staticKey.getPublicKey())
+    }
+  };
+  encryptDecrypt(length.readUInt16BE(2), encryptParams, decryptParams, version, keyData);
 }
 
 validate();
-var i;
-for (i = 0; i < count; ++i) {
-  [ useExplicitKey,
-    authenticationSecret,
-    exactlyOneRecord,
-    detectTruncation,
-    useKeyId,
-    useDH,
-  ].forEach(function(f) {
-    log('Test: ' + f.name);
-    f();
-  });
-}
 
+for (var version of ['aes128gcm', 'aesgcm', 'aesgcm128']) {
+  for (var i = 0; i < count; ++i) {
+    [useExplicitKey,
+      authenticationSecret,
+      exactlyOneRecord,
+      detectTruncation,
+      useKeyId,
+      useDH,
+    ].forEach(function (f) {
+      log('Test: ' + f.name);
+      f(version);
+    });
+  }
+}
 console.log('All tests passed.');
+
+if (dump) {
+  fs.open(DUMP_FILE, 'w', function (err) {
+    if (err) {
+      fs.unlink(DUMP_FILE)
+    }
+
+    fs.writeFile(DUMP_FILE, JSON.stringify(dump_data, undefined, '  '));
+  })
+}
