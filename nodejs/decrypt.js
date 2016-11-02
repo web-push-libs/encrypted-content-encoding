@@ -11,6 +11,7 @@ if (process.argv.length < 4) {
 }
 
 var params = {
+  version: 'aes128gcm',
   key: process.argv[2]
 };
 

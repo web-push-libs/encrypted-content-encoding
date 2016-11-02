@@ -19,9 +19,9 @@ receiver.generateKeys();
 receiver.setPublicKey(base64.decode(process.argv[4]));
 receiver.setPrivateKey(base64.decode(process.argv[3]));
 var keymap = {};
-keymap[''] = receiver;
 
 var params = {
+  type: 'aes128gcm',
   keyid: '',
   authSecret: process.argv[2],
   dh: process.argv[5],
@@ -34,6 +34,7 @@ if (process.argv.length > 7) {
     params[k] = extra[k];
   });
 }
+keymap[params.keyid] = receiver;
 
 console.log("Params: " + JSON.stringify(params, null, 2));
 var result = ece.decrypt(base64.decode(process.argv[6]), params);
