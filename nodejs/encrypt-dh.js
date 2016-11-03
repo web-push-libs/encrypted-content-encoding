@@ -10,13 +10,11 @@ if (process.argv.length < 5) {
   process.exit(2);
 }
 
-var keymap = {};
+
 var params = {
   version: 'aes128gcm',
-  keyid: '',
   authSecret: process.argv[2],
-  dh: process.argv[3],
-  keymap: keymap
+  dh: process.argv[3]
 };
 
 if (process.argv.length > 5) {
@@ -38,10 +36,9 @@ if (params.senderPublic) {
 } else {
   params.senderPublic = base64.encode(sender.getPublicKey());
 }
-keymap[params.keyid] = sender;
+params.privateKey = sender;
 
 console.log("Params: " + JSON.stringify(params, null, 2));
 var result = ece.encrypt(base64.decode(process.argv[4]), params);
 
-console.log("Public Key: " + base64.encode(sender.getPublicKey()));
 console.log("Encrypted Message: " + base64.encode(result));

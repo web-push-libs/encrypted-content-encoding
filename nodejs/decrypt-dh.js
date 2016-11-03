@@ -4,9 +4,9 @@ var base64 = require('urlsafe-base64');
 var crypto = require('crypto');
 var ece = require('./ece.js');
 
-if (process.argv.length < 7) {
+if (process.argv.length < 6) {
   console.warn('Usage: ' + process.argv.slice(0, 2).join(' ') +
-               ' <auth-secret> <receiver-private> <receiver-public> <sender-public> <message> [JSON args]');
+               ' <auth-secret> <receiver-private> <receiver-public> <message> [JSON args]');
   process.exit(2);
 }
 
@@ -21,11 +21,9 @@ receiver.setPrivateKey(base64.decode(process.argv[3]));
 var keymap = {};
 
 var params = {
-  type: 'aes128gcm',
-  keyid: '',
+  version: 'aes128gcm',
   authSecret: process.argv[2],
-  dh: process.argv[5],
-  keymap: keymap
+  privateKey: receiver
 };
 
 if (process.argv.length > 7) {
@@ -37,7 +35,7 @@ if (process.argv.length > 7) {
 keymap[params.keyid] = receiver;
 
 console.log("Params: " + JSON.stringify(params, null, 2));
-var result = ece.decrypt(base64.decode(process.argv[6]), params);
+var result = ece.decrypt(base64.decode(process.argv[5]), params);
 
 console.log(base64.encode(result));
 console.log(result.toString('utf-8'));
