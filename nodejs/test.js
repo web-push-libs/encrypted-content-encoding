@@ -33,7 +33,7 @@ if (process.argv.length >= 3) {
   if (!isNaN(parseInt(process.argv[2], 10))) {
     maxLen = parseInt(process.argv[2], 10);
   } else {
-     plaintext = new Buffer(process.argv[2], 'ascii');
+    plaintext = new Buffer(process.argv[2], 'ascii');
   }
 }
 function filterTests(fullList) {
