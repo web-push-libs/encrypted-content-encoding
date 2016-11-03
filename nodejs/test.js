@@ -266,7 +266,6 @@ function checkExamples() {
 }
 
 validate();
-var versions = [ 'aesgcm128', 'aesgcm', 'aes128gcm' ];
 filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
   .forEach(function(version) {
     filterTests([ useExplicitKey,
