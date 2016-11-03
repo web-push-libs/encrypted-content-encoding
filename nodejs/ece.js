@@ -176,6 +176,8 @@ function webpushSecret(header, mode) {
                     ' and ' + MODE_DECRYPT + ' supported');
   }
   keylog('remote pubkey', remotePubKey);
+  keylog('sender pubkey', senderPubKey);
+  keylog('receiver pubkey', receiverPubKey);
   return keylog('secret dh',
                 HKDF(header.authSecret,
                      header.privateKey.computeSecret(remotePubKey),
