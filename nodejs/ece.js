@@ -127,8 +127,8 @@ function extractDH(header, mode) {
     context: Buffer.concat([
       decode(header.keylabels[header.keyid]),
       Buffer.from([0]),
-      lengthPrefix(receiverPubKey),
-      lengthPrefix(senderPubKey)
+      lengthPrefix(receiverPubKey), // user agent
+      lengthPrefix(senderPubKey)    // application server
     ])
   };
 }
