@@ -5,30 +5,56 @@ var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
-// Usage: node <this> <iterations> <maxsize|plaintext>
-var count = parseInt(process.argv[2], 10) || 20;
-var maxLen = 100;
+// Usage: node test.js [args]
+// If args contains a version (e.g., aes128gcm), filter on versions.
+// If args contains a test function, filter on test functions.
+// If args contains 'verbose' show logs.
+// If args contains 'text=...' set the input string to the UTF-8 encoding of that string.
+// If args contains 'max=<n>' set the maximum input size to that value.
+var args = process.argv.slice(2);
 var minLen = 3;
-var plaintext = null;
-if (process.argv.length >= 4) {
-  if (!isNaN(parseInt(process.argv[3], 10))) {
-    maxLen = parseInt(process.argv[3], 10);
+var maxLen = 100;
+var plaintext;
+var log = function() {};
+args.forEach(function(arg) {
+  if (arg === 'verbose') {
+    log = console.log.bind(console);
+  } else if (arg.substring(0, 5) === 'text=') {
+    plaintext = arg.substring(5);
+  } else if (arg.substring(0, 4) === 'max=') {
+    var v = parseInt(arg.substring(4), 10);
+    if (!isNaN(v) && v > minLen) {
+      maxLen = v;
+    }
+  }
+});
+
+if (process.argv.length >= 3) {
+  if (!isNaN(parseInt(process.argv[2], 10))) {
+    maxLen = parseInt(process.argv[2], 10);
   } else {
-     plaintext = new Buffer(process.argv[3], 'ascii');
+     plaintext = new Buffer(process.argv[2], 'ascii');
   }
 }
-var log;
-if (count === 1) {
-  log = console.log.bind(console);
-} else {
-  log = function() {};
+function filterTests(fullList) {
+  var filtered = fullList.filter(function(t) {
+    return args.some(function(f) {
+      var v = typeof t === 'function' ? t.name : t;
+      return f === v;
+    });
+  });
+  if (filtered.length > 0) {
+    return filtered;
+  }
+  return fullList;
 }
+
 function logbuf(msg, buf) {
   if (typeof buf === 'string') {
     buf = base64.decode(buf);
   }
   log(msg + ': [' + buf.length + ']');
-  for (i = 0; i < buf.length; i += 48) {
+  for (var i = 0; i < buf.length; i += 48) {
     log('    ' + base64.encode(buf.slice(i, i + 48)));
   }
 }
@@ -42,10 +68,31 @@ function validate() {
   });
 }
 
-function encryptDecrypt(length, encryptParams, decryptParams) {
-  // These need to be the same.
+function generateInput(minLength) {
+  if (typeof minLength === 'undefined') {
+    minLength = 0;
+  }
+  var input = plaintext ||
+      crypto.randomBytes(Math.max(minLength, Math.min(length, maxLen)));
+  if (input.length < minLength) {
+    throw new Error('Plaintext is too short');
+  }
+  logbuf('Input', input);
+  return input;
+}
+
+function encryptDecrypt(input, encryptParams, decryptParams) {
+  // Fill out a default rs.
+  encryptParams.rs = encryptParams.rs || (input.length + minLen);
+  if (decryptParams.version === 'aes128gcm') {
+    delete decryptParams.rs;
+  } else {
+    decryptParams.rs = decryptParams.rs || encryptParams.rs;
+    assert.equal(encryptParams.rs, decryptParams.rs);
+  }
+
+  // These should be in agreement.
   assert.equal(encryptParams.version, decryptParams.version);
-  assert.equal(encryptParams.rs, decryptParams.rs);
   assert.equal(encryptParams.authSecret, decryptParams.authSecret);
 
   // Always fill in the salt so we can log it.
@@ -53,10 +100,6 @@ function encryptDecrypt(length, encryptParams, decryptParams) {
   encryptParams.salt = decryptParams.salt;
   logbuf('Salt', encryptParams.salt);
 
-  var input = plaintext ||
-      crypto.randomBytes(Math.max(minLen, Math.min(length, maxLen)));
-  // var input = new Buffer('I am the walrus');
-  logbuf('Input', input);
   var encrypted = ece.encrypt(input, encryptParams);
   logbuf('Encrypted', encrypted);
   var decrypted = ece.decrypt(encrypted, decryptParams);
@@ -66,49 +109,45 @@ function encryptDecrypt(length, encryptParams, decryptParams) {
 }
 
 function useExplicitKey(version) {
-  var length = crypto.randomBytes(4).readUInt16BE(0);
+  var input = generateInput();
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16)),
-    rs: length + minLen
+    key: base64.encode(crypto.randomBytes(16))
   };
   logbuf('Key', params.key);
-  encryptDecrypt(length, params, params);
+  encryptDecrypt(input, params, params);
 }
 
 function authenticationSecret(version) {
-  var length = crypto.randomBytes(4).readUInt16BE(0);
+  var input = generateInput();
   var params = {
     version: version,
     key: base64.encode(crypto.randomBytes(16)),
-    rs: length + minLen,
     authSecret: base64.encode(crypto.randomBytes(16))
   };
   logbuf('Key', params.key);
   logbuf('Context', params.authSecret);
-  encryptDecrypt(length, params, params);
+  encryptDecrypt(input, params, params);
 }
 
 function exactlyOneRecord(version) {
-  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0) + 1, maxLen);
+  var input = generateInput(1);
   var params = {
     version: version,
     key: base64.encode(crypto.randomBytes(16)),
-    rs: length + 2 // add exactly the padding
+    rs: input.length + 2 // add exactly the padding
   };
-  encryptDecrypt(length, params, params);
+  encryptDecrypt(input, params, params);
 }
 
 function detectTruncation(version) {
-  var length = Math.min(crypto.randomBytes(2).readUInt16BE(0) + minLen, maxLen);
+  var input = generateInput(2);
   var params = {
     version: version,
     key: base64.encode(crypto.randomBytes(16)),
-    rs: length // so we get two records
+    rs: input.length + 1 // so we get two records
   };
   var headerLen = (version === 'aes128gcm') ? 21 : 0;
-  var input = crypto.randomBytes(Math.min(length, maxLen));
-  logbuf('Input', input);
   var encrypted = ece.encrypt(input, params);
   var chunkLen = headerLen + params.rs + 16;
   assert.ok(chunkLen < encrypted.length);
@@ -127,17 +166,16 @@ function detectTruncation(version) {
 }
 
 function useKeyId(version) {
-  var length = crypto.randomBytes(4).readUInt16BE(0);
+  var input = generateInput();
   var keyid = base64.encode(crypto.randomBytes(16));
   var key = crypto.randomBytes(16);
   var keymap = {};
   keymap[keyid] = key;
   var params = {
     keyid: keyid,
-    rs: length + minLen,
     keymap: keymap
   };
-  encryptDecrypt(length, params, params, version);
+  encryptDecrypt(input, params, params);
 }
 
 function useDH(version) {
@@ -157,26 +195,30 @@ function useDH(version) {
   logbuf('Sender private', ephemeralKey.getPrivateKey());
   logbuf('Sender public', ephemeralKey.getPublicKey());
 
-  var length = crypto.randomBytes(4).readUInt16BE(0);
+  var input = generateInput();
   var encryptParams = {
     version: version,
-    keyid: 'k',
-    dh: base64.encode(ephemeralKey.getPublicKey()),
     authSecret: base64.encode(crypto.randomBytes(16)),
-    rs: length + minLen,
-    keymap: { k: staticKey },
-    keylabels: { k: 'P-256' }
+    dh: base64.encode(staticKey.getPublicKey())
   };
   var decryptParams = {
     version: version,
-    keyid: 'k',
-    dh: base64.encode(staticKey.getPublicKey()),
-    authSecret: encryptParams.authSecret,
-    rs: encryptParams.rs,
-    keymap: { k: ephemeralKey },
-    keylabels: { k: 'P-256' }
+    authSecret: encryptParams.authSecret
   };
-  encryptDecrypt(length, encryptParams, decryptParams);
+  if (version === 'aes128gcm') {
+    encryptParams.privateKey = ephemeralKey;
+    decryptParams.privateKey = staticKey;
+  } else {
+    encryptParams.keyid = 'k';
+    encryptParams.keymap = { k: ephemeralKey };
+    encryptParams.keylabels = { k: 'P-256' };
+
+    decryptParams.dh = base64.encode(ephemeralKey.getPublicKey());
+    decryptParams.keyid = 'k';
+    decryptParams.keymap = { k: staticKey };
+    decryptParams.keylabels = encryptParams.keylabels;
+  }
+  encryptDecrypt(input, encryptParams, decryptParams);
 }
 
 // Use the examples from the draft as a sanity check.
@@ -224,21 +266,21 @@ function checkExamples() {
 }
 
 validate();
-var i;
-for (i = 0; i < count; ++i) {
-  [ 'aesgcm128', 'aesgcm', 'aes128gcm' ].forEach(function(version) {
-    [ useExplicitKey,
-      authenticationSecret,
-      exactlyOneRecord,
-      detectTruncation,
-      useKeyId,
-      useDH,
-    ].forEach(function(f) {
-      log(version + ' Test: ' + f.name);
-      f(version);
-    });
+var versions = [ 'aesgcm128', 'aesgcm', 'aes128gcm' ];
+filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
+  .forEach(function(version) {
+    filterTests([ useExplicitKey,
+                  authenticationSecret,
+                  exactlyOneRecord,
+                  detectTruncation,
+                  useKeyId,
+                  useDH,
+                ])
+      .forEach(function(test) {
+        log(version + ' Test: ' + test.name);
+        test(version);
+      });
   });
-}
 checkExamples();
 
-console.log('All tests passed.');
+log('All tests passed.');

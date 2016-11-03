@@ -101,13 +101,16 @@ function lengthPrefix(buffer) {
 }
 
 function extractDH(header, mode) {
-  if (!header.keymap[header.keyid]) {
-    throw new Error('No known DH key for ' + header.keyid);
+  var key = header.privateKey;
+  if (!key) {
+    if (!header.keymap || !header.keyid || !header.keymap[header.keyid]) {
+      throw new Error('No known DH key for ' + header.keyid);
+    }
+    key = header.keymap[header.keyid];
   }
   if (!header.keylabels[header.keyid]) {
     throw new Error('No known DH key label for ' + header.keyid);
   }
-  var key = header.keymap[header.keyid];
   var senderPubKey, receiverPubKey;
   if (mode === MODE_ENCRYPT) {
     senderPubKey = key.getPublicKey();
@@ -139,7 +142,7 @@ function extractSecretAndContext(header, mode) {
     }
   } else if (header.dh) { // receiver/decrypt
     result = extractDH(header, mode);
-  } else if (header.keyid) {
+  } else if (typeof header.keyid !== undefined) {
     result.secret = header.keymap[header.keyid];
   }
   if (!result.secret) {
@@ -155,6 +158,35 @@ function extractSecretAndContext(header, mode) {
   return result;
 }
 
+function webpushSecret(header, mode) {
+  if (!header.authSecret) {
+    throw new Error('No authentication secret for webpush');
+  }
+  keylog('authsecret', header.authSecret);
+
+  var remotePubKey, senderPubKey, receiverPubKey;
+  if (mode === MODE_ENCRYPT) {
+    senderPubKey = header.privateKey.getPublicKey();
+    remotePubKey = receiverPubKey = header.dh;
+  } else if (mode === MODE_DECRYPT) {
+    remotePubKey = senderPubKey = header.keyid;
+    receiverPubKey = header.privateKey.getPublicKey();
+  } else {
+    throw new Error('Unknown mode only ' + MODE_ENCRYPT +
+                    ' and ' + MODE_DECRYPT + ' supported');
+  }
+  keylog('remote pubkey', remotePubKey);
+  return keylog('secret dh',
+                HKDF(header.authSecret,
+                     header.privateKey.computeSecret(remotePubKey),
+                     Buffer.concat([
+                       Buffer.from('WebPush: info\0'),
+                       receiverPubKey,
+                       senderPubKey
+                     ]),
+                     SHA_256_LENGTH));
+}
+
 function extractSecret(header, mode) {
   if (header.key) {
     if (header.key.length !== KEY_LENGTH) {
@@ -163,39 +195,16 @@ function extractSecret(header, mode) {
     return keylog('secret key', header.key);
   }
 
-  // We need a key identifier for all the rest.
-  var key = header.keymap && header.keymap[header.keyid];
-  if (!key) {
-    throw new Error('No saved key (keyid: "' + header.keyid + '")');
+  if (!header.privateKey) {
+    // Lookup based on keyid
+    var key = header.keymap && header.keymap[header.keyid];
+    if (!key) {
+      throw new Error('No saved key (keyid: "' + header.keyid + '")');
+    }
+    return key;
   }
 
-  // Simple key
-  if (!header.dh) {
-    return keylog('secret saved', key);
-  }
-
-  // We are doing DH
-  var senderPubKey, receiverPubKey;
-  if (mode === MODE_ENCRYPT) {
-    senderPubKey = key.getPublicKey();
-    receiverPubKey = header.dh;
-  } else if (mode === MODE_DECRYPT) {
-    senderPubKey = header.dh;
-    receiverPubKey = key.getPublicKey();
-  } else {
-    throw new Error('Unknown mode only ' + MODE_ENCRYPT +
-                    ' and ' + MODE_DECRYPT + ' supported');
-  }
-  keylog('authsecret', header.authSecret);
-  return keylog('secret dh',
-                HKDF(header.authSecret || Buffer.from(''),
-                     key.computeSecret(header.dh),
-                     Buffer.concat([
-                       Buffer.from('WebPush: info\0'),
-                       receiverPubKey,
-                       senderPubKey
-                     ]),
-                     SHA_256_LENGTH));
+  return webpushSecret(header, mode);
 }
 
 function deriveKeyAndNonce(header, mode) {
@@ -234,10 +243,6 @@ function deriveKeyAndNonce(header, mode) {
   return result;
 }
 
-function fillCommonParams(header, params) {
-  return header;
-}
-
 /* Parse command-line arguments. */
 function parseParams(params) {
   var header = {};
@@ -266,8 +271,13 @@ function parseParams(params) {
   if (params.key) {
     header.key = decode(params.key);
   } else {
-    header.keymap = params.keymap || saved.keymap;
-    header.keylabels = params.keylabels || saved.keylabels;
+    header.privateKey = params.privateKey;
+    if (!header.privateKey) {
+      header.keymap = params.keymap || saved.keymap;
+    }
+    if (header.version !== 'aes128gcm') {
+      header.keylabels = params.keylabels || saved.keylabels;
+    }
     if (params.dh) {
       header.dh = decode(params.dh);
     }
@@ -294,7 +304,7 @@ function readHeader(buffer, header) {
   var idsz = buffer.readUIntBE(20, 1);
   header.salt = buffer.slice(0, KEY_LENGTH);
   header.rs = buffer.readUIntBE(KEY_LENGTH, 4);
-  header.keyid = buffer.slice(21, 21 + idsz).toString('utf-8');
+  header.keyid = buffer.slice(21, 21 + idsz);
   return 21 + idsz;
 }
 
@@ -336,8 +346,12 @@ function decryptRecord(key, counter, buffer, header) {
  * If |params.keyid| is specified without |params.dh|, the keyid value is used
  * to lookup the |params.keymap| for a buffer containing the key.
  *
- * For ECDH, |params.dh| includes the public key of the sender.  The ECDH key
+ * For version aesgcm and aesgcm128, |params.dh| includes the public key of the sender.  The ECDH key
  * pair used to decrypt is looked up using |params.keymap[params.keyid]|.
+ *
+ * Version aes128gcm is stricter.  The |params.privateKey| includes the private
+ * key of the receiver.  The keyid is extracted from the header and used as the
+ * ECDH public key of the sender.
  */
 function decrypt(buffer, params) {
   var header = parseParams(params);
@@ -410,9 +424,12 @@ function writeHeader(header) {
  * If |params.keyid| is specified without |params.dh|, the keyid value is used
  * to lookup the |params.keymap| for a buffer containing the key.
  *
- * For Diffie-Hellman, |params.dh| includes the public key of the receiver.  The
- * ECDH key pair used to encrypt is looked up using |params.keymap[params.keyid]|.
- * Key pairs can be created using |crypto.createECDH()|.
+ * For Diffie-Hellman (WebPush), |params.dh| includes the public key of the
+ * receiver.  |params.privateKey| is used to establish a shared secret.  For
+ * versions aesgcm and aesgcm128, if a private key is not provided, the ECDH key
+ * pair used to encrypt is looked up using |params.keymap[params.keyid]|, and
+ * |params.keymap| defaults to the values saved with saveKey().  Key pairs can
+ * be created using |crypto.createECDH()|.
  */
 function encrypt(buffer, params) {
   if (!Buffer.isBuffer(buffer)) {
@@ -425,6 +442,10 @@ function encrypt(buffer, params) {
 
   var result;
   if (header.version === 'aes128gcm') {
+    // Save the DH public key in the header.
+    if (header.privateKey && !header.keyid) {
+      header.keyid = header.privateKey.getPublicKey();
+    }
     result = writeHeader(header);
   } else {
     // No header on other versions
