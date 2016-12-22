@@ -3,6 +3,8 @@ machine:
     version: v6.1.0
   python:
     version: 3.5.2
+  post:
+    - pyenv global 2.7.12 3.4.4 3.5.2
 
 dependencies:
   cache_directories:
