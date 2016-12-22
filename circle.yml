@@ -9,6 +9,7 @@ machine:
 dependencies:
   cache_directories:
     - nodejs/node_modules
+    - python/.tox
   pre:
     - cd nodejs;npm install
     - pip install tox
