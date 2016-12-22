@@ -1,0 +1,15 @@
+machine:
+  post:
+    - pyenv global 2.7.12 3.5.2
+
+dependencies:
+  pre:
+    - cd nodejs;npm install
+    - cd python;python2 setup.py install --user
+    - cd python;python3 setup.py install --user
+
+test:
+  override:
+    - cd nodejs;node test.js
+    - cd python;python2 test.py
+    - cd python;python3 test.py
