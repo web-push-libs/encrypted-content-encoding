@@ -10,6 +10,9 @@ dependencies:
 
 test:
   override:
+    - node --version
+    - which python2
+    - which python3
     - cd nodejs;node test.js
     - cd python;python2 test.py
     - cd python;python3 test.py
