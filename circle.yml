@@ -1,20 +1,17 @@
 machine:
   node:
     version: v6.1.0
-  post:
-    - pyenv global 2.7.12 3.5.2
+  python:
+    version: 3.5.2
 
 dependencies:
   cache_directories:
     - nodejs/node_modules
-    - .pyenv
   pre:
     - cd nodejs;npm install
-    - pip2 install -v pyelliptic cryptography
-    - pip3 install -v pyelliptic cryptography
+    - pip install -v pyelliptic cryptography
 
 test:
   override:
     - cd nodejs;node test.js
-    - cd python;python2 test.py
-    - cd python;python3 test.py
+    - cd python;python test.py
