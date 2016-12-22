@@ -4,6 +4,8 @@ var crypto = require('crypto');
 var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
+var fs = require('fs');
+
 
 // Usage: node test.js [args]
 // If args contains a version (e.g., aes128gcm), filter on versions.
@@ -35,6 +37,7 @@ if (process.argv.length >= 3) {
   } else {
     plaintext = new Buffer(process.argv[2], 'ascii');
   }
+  dump = ( process.argv.indexOf('dump') != -1)
 }
 function filterTests(fullList) {
   var filtered = fullList.filter(function(t) {
@@ -59,12 +62,16 @@ function logbuf(msg, buf) {
   }
 }
 
+// Validate that the encryption function only accepts Buffers
 function validate() {
   ['hello', null, 1, NaN, [], {}].forEach(function(v) {
     try {
-      encrypt('hello', {});
-      throw new Error('should insist on a buffer');
-    } catch (e) {}
+      ece.encrypt(v, {});
+    } catch (e) {
+      if (e.toString() != "Error: buffer argument must be a Buffer") {
+        throw new Error("encrypt failed to reject " + JSON.stringify(v));
+      }
+    }
   });
 }
 
@@ -104,6 +111,21 @@ function encryptDecrypt(input, encryptParams, decryptParams) {
   logbuf('Encrypted', encrypted);
   var decrypted = ece.decrypt(encrypted, decryptParams);
   logbuf('Decrypted', decrypted);
+  if (dump) {
+    var data = {
+      version: version,
+      input: base64.encode(input),
+      encrypted: base64.encode(encrypted),
+      params: {
+        encrypted: encryptParams,
+        decrypt: decryptParams,
+      }
+    };
+    if (keyData) {
+      data.keys = keyData;
+    }
+    dumpData(data);
+  }
   assert.equal(Buffer.compare(input, decrypted), 0);
   log('----- OK');
 }
@@ -155,7 +177,7 @@ function detectTruncation(version) {
   logbuf('Encrypted', encrypted);
   var ok = false;
   try {
-    ece.decrypt(encrypted, params);
+    ece.decrypt(encrypted, params, params, version);
   } catch (e) {
     log('----- OK: ' + e);
     ok = true;
