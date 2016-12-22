@@ -356,7 +356,7 @@ class TestEceIntegration(unittest.TestCase):
                              version)
 
     def test_types(self):
-        for c_type in ["aes128gcm", "aesgcm", "aesgcm128"]:
+        for ver in ["aes128gcm", "aesgcm", "aesgcm128"]:
             for f in (
                     self.use_dh,
                     self.use_explicit_key,
@@ -367,7 +367,7 @@ class TestEceIntegration(unittest.TestCase):
                     ):
                 ece.keys = {}
                 ece.labels = {}
-                f(version=c_type)
+                f(version=ver)
 
 
 class TestNode(unittest.TestCase):
