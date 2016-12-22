@@ -5,10 +5,13 @@ machine:
     - pyenv global 2.7.12 3.5.2
 
 dependencies:
+  cache_directories:
+    - nodejs/node_modules
+    - .pyenv
   pre:
-    - cd nodejs;npm install --dev
-    - pip2 install pyelliptic cryptography
-    - pip3 install pyelliptic cryptography
+    - cd nodejs;npm install
+    - pip2 install -v pyelliptic cryptography
+    - pip3 install -v pyelliptic cryptography
 
 test:
   override:
