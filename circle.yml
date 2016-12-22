@@ -9,9 +9,9 @@ dependencies:
     - nodejs/node_modules
   pre:
     - cd nodejs;npm install
-    - pip install pyelliptic cryptography
+    - pip install tox
 
 test:
   override:
     - cd nodejs;node test.js
-    - cd python;python test.py
+    - cd python;tox

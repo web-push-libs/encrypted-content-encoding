@@ -28,7 +28,8 @@ versions = {
 
 class ECEException(Exception):
     """Exception for ECE encryption functions"""
-    pass
+    def __init__(self, message):
+        self.message = message
 
 # TODO: turn this into a class so that we don't grow/stomp keys.
 
@@ -78,7 +79,7 @@ def derive_key(mode, salt=None, key=None, dh=None, keyid=None,
         else:
             raise ECEException(u"unknown 'mode' specified: " + mode)
         if version == "aes128gcm":
-            context = "WebPush: info\x00" + receiver_pub_key + sender_pub_key
+            context = b"WebPush: info\x00" + receiver_pub_key + sender_pub_key
         else:
             label = labels.get(keyid, 'P-256').encode('utf-8')
             context = (label + b"\0" + length_prefix(receiver_pub_key) +
@@ -192,7 +193,7 @@ def decrypt(content, salt, key=None, keyid=None, dh=None, rs=4096,
         :type content: str
 
         """
-        id_len = struct.unpack("!B", content[20])[0]
+        id_len = struct.unpack("!B", content[20:21])[0]
         return {
             "salt": content[:16],
             "rs": struct.unpack("!L", content[16:20])[0],
@@ -281,13 +282,14 @@ def encrypt(content, salt=None, key=None, keyid=None, dh=None, rs=4096,
     :rtype str
 
     """
-    def encrypt_record(key, nonce, counter, buffer):
+    def encrypt_record(key, nonce, counter, buf):
         encryptor = Cipher(
             algorithms.AES(key),
             modes.GCM(iv(nonce, counter)),
             backend=default_backend()
         ).encryptor()
-        data = encryptor.update(b"\0\0" + buffer) + encryptor.finalize()
+        data = encryptor.update(b"\0\0" + buf)
+        data += encryptor.finalize()
         data += encryptor.tag
         return data
 

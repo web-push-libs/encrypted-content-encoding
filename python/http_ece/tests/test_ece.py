@@ -12,7 +12,7 @@ import http_ece as ece
 from http_ece import ECEException
 
 
-TEST_STRING = "You know my name, look up the number."
+TEST_STRING = b"You know my name, look up the number."
 TEST_LEN = len(TEST_STRING)
 LEGACY_FILE = os.path.join(os.sep, "..", "encrypt_data.json")[1:]
 
