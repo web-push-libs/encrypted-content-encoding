@@ -14,11 +14,14 @@ from http_ece import ECEException
 
 TEST_STRING = b"You know my name, look up the number."
 TEST_LEN = len(TEST_STRING)
-LEGACY_FILE = os.path.join(os.sep, "..", "encrypt_data.json")[1:]
+TEST_VECTORS = os.path.join(os.sep, "..", "encrypt_data.json")[1:]
 
 
 def log(arg):
+    """
     print(arg)
+    """
+    return
 
 
 def logbuf(msg, buf):
@@ -52,22 +55,24 @@ def rlen():
 class TestEce(unittest.TestCase):
 
     def setUp(self):
-        ece.keys = {'valid': pyelliptic.ECC(curve="prime256v1")}
-        ece.labels = {'valid': 'P-256'}
+        self.keymap = {'valid': pyelliptic.ECC(curve="prime256v1")}
+        self.keylabels = {'valid': 'P-256'}
         self.m_salt = os.urandom(16)
         self.m_dh = os.urandom(16)
 
     def tearDown(self):
-        ece.keys = {}
-        ece.labels = {}
+        self.keymap = None
+        self.keylabels = None
 
     def test_derive_key_no_keyid(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
+                           version='aes128gcm',
                            salt=self.m_salt,
                            key=None,
                            dh=self.m_dh,
                            keyid=None,
+                           keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "'keyid' is not specified with 'dh'")
@@ -75,10 +80,12 @@ class TestEce(unittest.TestCase):
     def test_derive_key_invalid_key(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
+                           version='aes128gcm',
                            salt=self.m_salt,
                            key=None,
                            dh=self.m_dh,
                            keyid="invalid",
+                           keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "'keyid' doesn't identify a key: invalid")
@@ -86,10 +93,12 @@ class TestEce(unittest.TestCase):
     def test_derive_key_invalid_mode(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('invalid',
+                           version='aes128gcm',
                            salt=self.m_salt,
                            key=None,
                            dh=self.m_dh,
                            keyid="valid",
+                           keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "unknown 'mode' specified: invalid")
@@ -112,10 +121,12 @@ class TestEce(unittest.TestCase):
     def test_derive_key_invalid_salt(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
+                           version='aes128gcm',
                            salt=None,
                            key=None,
                            dh=self.m_dh,
                            keyid="valid",
+                           keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "'salt' must be a 16 octet value")
@@ -123,33 +134,39 @@ class TestEce(unittest.TestCase):
     def test_derive_key_invalid_version(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
+                           version='invalid',
                            salt=self.m_salt,
                            key=None,
                            dh=None,
                            keyid="valid",
+                           keymap=self.keymap,
                            auth_secret=None,
-                           version="invalid",
                            )
-        eq_(ex.exception.message, "invalid version specified")
+        eq_(ex.exception.message, "Invalid version")
 
     def test_derive_key_no_secret(self):
-        ece.keys['valid'] = None
+        self.keymap['valid'] = None
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
+                           version='aes128gcm',
                            salt=self.m_salt,
                            key=None,
                            dh=None,
                            keyid="valid",
+                           keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "unable to determine the secret")
 
     def test_derive_key_keyid_from_keys(self):
+        self.keymap['valid'] = os.urandom(16)
         ece.derive_key('encrypt',
+                       version='aes128gcm',
                        salt=self.m_salt,
                        key=None,
                        dh=None,
                        keyid="valid",
+                       keymap=self.keymap,
                        auth_secret=None,
                        )
 
@@ -181,7 +198,6 @@ class TestEceIntegration(unittest.TestCase):
         :type decrypt_params: dict
         :param version: Content-Type of the body, formulating encryption
         :type enumerate("aes128gcm", "aesgcm", "aesgcm128"):
-
         """
         if decrypt_params is None:
             decrypt_params = encrypt_params
@@ -196,6 +212,7 @@ class TestEceIntegration(unittest.TestCase):
                                 salt=encrypt_params.get("salt"),
                                 key=encrypt_params.get("key"),
                                 keyid=encrypt_params.get("keyid"),
+                                keymap=decrypt_params.get("keymap"),
                                 dh=encrypt_params.get("dh"),
                                 rs=encrypt_params.get("rs"),
                                 auth_secret=encrypt_params.get("authSecret"),
@@ -205,6 +222,7 @@ class TestEceIntegration(unittest.TestCase):
                                 salt=decrypt_params.get("salt"),
                                 key=decrypt_params.get("key"),
                                 keyid=decrypt_params.get("keyid"),
+                                keymap=decrypt_params.get("keymap"),
                                 dh=decrypt_params.get("dh"),
                                 rs=decrypt_params.get("rs"),
                                 auth_secret=decrypt_params.get("authSecret"),
@@ -260,31 +278,35 @@ class TestEceIntegration(unittest.TestCase):
         self.encrypt_decrypt(length, params, version=version)
 
     def detect_truncation(self, version=None):
-        length = min(rlen(), TEST_LEN)
         key = os.urandom(16)
         salt = None
         ex_msg = 'Decryption error: InvalidTag()'
         if version != "aes128gcm":
             salt = os.urandom(16)
             ex_msg = 'Message truncated'
+        if version == "aesgcm128":
+            pad_size = 1
+        else:
+            pad_size = 2
 
-        rs = length + 2
+        rs = len(TEST_STRING) + pad_size
         encrypted = ece.encrypt(TEST_STRING, salt=salt, key=key, rs=rs,
                                 version=version)
         with assert_raises(ECEException) as ex:
-            ece.decrypt(encrypted[0:length + 2 + 16], salt=salt, key=key,
+            ece.decrypt(encrypted[0:rs + 16],
+                        salt=salt, key=key,
                         rs=rs, version=version)
         eq_(ex.exception.message, ex_msg)
 
     def use_key_id(self, version=None):
-        keyid = b64e(os.urandom(16))
         key = os.urandom(16)
-        ece.keys[keyid] = key
+        keymap = {'k': key }
         salt = None
         if version != "aes128gcm":
             salt = os.urandom(16)
         params = {
-            "keyid": keyid,
+            "keyid": 'k',
+            "keymap": keymap,
             "salt": salt,
             "rs": rlen() + 1
         }
@@ -302,9 +324,6 @@ class TestEceIntegration(unittest.TestCase):
         salt = None
         if version != "aes128gcm":
             salt = os.urandom(16)
-        static_key_id = "static"    # b64e(static_key.get_pubkey()[1:])
-        ece.keys[static_key_id] = static_key
-        ece.labels[static_key_id] = "P-256"
 
         log("Receiver private: " + repr(static_key.get_privkey()))
         log("Receiver public: " + repr(static_key.get_pubkey()))
@@ -312,21 +331,22 @@ class TestEceIntegration(unittest.TestCase):
         # the ephemeral key is used by the sender
         ephemeral_key = pyelliptic.ECC(curve="prime256v1")
         is_uncompressed(ephemeral_key)
-        ephemeral_key_id = "ephemeral"  # b64e(ephemeral_key.get_pubkey()[1:])
-        ece.keys[ephemeral_key_id] = ephemeral_key
-        ece.labels[ephemeral_key_id] = "P-256"
 
         log("Sender private: " + repr(ephemeral_key.get_privkey()))
         log("Sender public: " + repr(ephemeral_key.get_pubkey()))
 
+        keymap = {'static': static_key, 'ephemeral': ephemeral_key }
+
         encrypt_params = {
-            "keyid": ephemeral_key_id,
+            "keyid": 'ephemeral',
+            "keymap": keymap,
             "dh": static_key.get_pubkey(),
             "salt": salt,
             "rs": rlen() + 1,
         }
         decrypt_params = {
-            "keyid": static_key_id,
+            "keyid": 'static',
+            "keymap": keymap,
             "dh": ephemeral_key.get_pubkey(),
             "salt": salt,
             "rs": encrypt_params["rs"],
@@ -350,32 +370,46 @@ class TestEceIntegration(unittest.TestCase):
                 f(version=c_type)
 
 
-class TestLegacy(unittest.TestCase):
-    """Testing legacy attempts to use data from the node.js version.
-
-    Unfortunately, the node.js version is a bit cavalier in how it finds
-    ECC points. These points may fail to be imported by python's library actually checks, so this may fail.
-
+class TestNode(unittest.TestCase):
+    """Testing using data from the node.js version.
     """
     def setUp(self):
-        if not os.path.exists(LEGACY_FILE):
-            self.skipTest("No legacy enrypt_data.json file found")
-        self.legacy_data = json.loads(file(LEGACY_FILE).read())
+        if not os.path.exists(TEST_VECTORS):
+            self.skipTest("No %s file found" % TEST_VECTORS)
+        f = open(TEST_VECTORS, 'r')
+        self.legacy_data = json.loads(f.read())
+        f.close()
 
     def test_decrypt(self):
-        import pdb; pdb.set_trace()
-        for version in self.legacy_data:
-            data = self.legacy_data[version]
-            ece.keys['static'] = pyelliptic.ECC(
-                pubkey=b64d(data['keys']['receiver']['public']),
-                privkey=b64d(data['keys']['receiver']['private']),
-            )
+        for data in self.legacy_data:
+            print(data)
+            if 'keys' in data:
+                dh = b64d(data['keys']['sender']['public'])
+                key = None
+                keymap = {
+                    'static': pyelliptic.ECC(
+                        pubkey=b64d(data['keys']['receiver']['public']),
+                        privkey=b64d(data['keys']['receiver']['private']),
+                    )
+                }
+            else:
+                dh = None
+                key = b64d(data['params']['decrypt']['key'])
+                keymap = {}
+
+            if 'authSecret' in data['params']['decrypt']:
+                auth_secret = b64d(data['params']['decrypt']['authSecret'])
+            else:
+                auth_secret = None
             decrypted = ece.decrypt(
                 b64d(data['encrypted']),
                 salt=b64d(data['params']['decrypt']['salt']),
-                dh=b64d(data['keys']['sender']['public']),
+                key=key,
+                dh=dh,
+                auth_secret=auth_secret,
                 keyid='static',
+                keymap=keymap,
                 rs=data['params']['decrypt']['rs'],
-                version=version,
+                version=data['version'],
             )
-            eq_(b64d(data[input]), decrypted)
+            eq_(b64d(data['input']), decrypted)

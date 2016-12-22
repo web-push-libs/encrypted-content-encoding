@@ -8,3 +8,5 @@ node_modules
 .tox
 .eggs
 .coverage
+
+/encrypt_data.json

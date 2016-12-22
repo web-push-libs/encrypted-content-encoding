@@ -11,10 +11,13 @@ var assert = require('assert');
 // If args contains 'verbose' show logs.
 // If args contains 'text=...' set the input string to the UTF-8 encoding of that string.
 // If args contains 'max=<n>' set the maximum input size to that value.
+// If args contains 'dump[=file]' log info to ../encrypt_data.json or the specified file.
 var args = process.argv.slice(2);
 var minLen = 3;
 var maxLen = 100;
 var plaintext;
+var dumpFile;
+var dumpData = [];
 var log = function() {};
 args.forEach(function(arg) {
   if (arg === 'verbose') {
@@ -26,16 +29,13 @@ args.forEach(function(arg) {
     if (!isNaN(v) && v > minLen) {
       maxLen = v;
     }
+  } else if (arg === 'dump') {
+    dumpFile = '../encrypt_data.json';
+  } else if (arg.substring(0, 5) === 'dump=') {
+    dumpFile = arg.substring(5);
   }
 });
 
-if (process.argv.length >= 3) {
-  if (!isNaN(parseInt(process.argv[2], 10))) {
-    maxLen = parseInt(process.argv[2], 10);
-  } else {
-    plaintext = new Buffer(process.argv[2], 'ascii');
-  }
-}
 function filterTests(fullList) {
   var filtered = fullList.filter(function(t) {
     return args.some(function(f) {
@@ -59,12 +59,22 @@ function logbuf(msg, buf) {
   }
 }
 
+function saveDump(data){
+  if (dumpFile && data.version) {
+    dumpData.push(data);
+  }
+}
+
 function validate() {
   ['hello', null, 1, NaN, [], {}].forEach(function(v) {
     try {
-      encrypt('hello', {});
+      ece.encrypt('hello', {});
       throw new Error('should insist on a buffer');
-    } catch (e) {}
+    } catch (e) {
+      if (e.toString() != "Error: buffer argument must be a Buffer") {
+        throw new Error("encrypt failed to reject " + JSON.stringify(v));
+      }
+    }
   });
 }
 
@@ -81,7 +91,7 @@ function generateInput(len) {
   return input;
 }
 
-function encryptDecrypt(input, encryptParams, decryptParams) {
+function encryptDecrypt(input, encryptParams, decryptParams, keys) {
   // Fill out a default rs.
   encryptParams.rs = encryptParams.rs || (input.length + minLen);
   if (decryptParams.version === 'aes128gcm') {
@@ -106,6 +116,17 @@ function encryptDecrypt(input, encryptParams, decryptParams) {
   logbuf('Decrypted', decrypted);
   assert.equal(Buffer.compare(input, decrypted), 0);
   log('----- OK');
+
+  saveDump({
+    version: encryptParams.version,
+    input: base64.encode(input),
+    encrypted: base64.encode(encrypted),
+    params: {
+      encrypt: encryptParams,
+      decrypt: decryptParams,
+    },
+    keys: keys
+  });
 }
 
 function useExplicitKey(version) {
@@ -175,7 +196,12 @@ function useKeyId(version) {
     keyid: keyid,
     keymap: keymap
   };
-  encryptDecrypt(input, params, params);
+
+  var keyData = {
+    keyid: keyid,
+    key: base64.encode(keyid)
+  }
+  encryptDecrypt(input, params, params, keyData);
 }
 
 function useDH(version) {
@@ -218,7 +244,20 @@ function useDH(version) {
     decryptParams.keymap = { k: staticKey };
     decryptParams.keylabels = encryptParams.keylabels;
   }
-  encryptDecrypt(input, encryptParams, decryptParams);
+
+
+  // keyData is used for cross library verification dumps
+  var keyData = {
+    sender: {
+      private: base64.encode(ephemeralKey.getPrivateKey()),
+      public: base64.encode(ephemeralKey.getPublicKey())
+    },
+    receiver: {
+      private: base64.encode(staticKey.getPrivateKey()),
+      public: base64.encode(staticKey.getPublicKey())
+    }
+  };
+  encryptDecrypt(input, encryptParams, decryptParams, keyData);
 }
 
 // Use the examples from the draft as a sanity check.
@@ -283,3 +322,8 @@ filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
 checkExamples();
 
 log('All tests passed.');
+
+
+if (dumpFile) {
+  require('fs').writeFileSync(dumpFile, JSON.stringify(dumpData, undefined, '  '));
+}
