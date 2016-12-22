@@ -1,18 +1,17 @@
 machine:
+  node:
+    version: v6.1.0
   post:
     - pyenv global 2.7.12 3.5.2
 
 dependencies:
   pre:
-    - cd nodejs;npm install
-    - cd python;python2 setup.py install --user
-    - cd python;python3 setup.py install --user
+    - cd nodejs;npm install --dev
+    - pip2 install pyelliptic cryptography
+    - pip3 install pyelliptic cryptography
 
 test:
   override:
-    - node --version
-    - which python2
-    - which python3
     - cd nodejs;node test.js
     - cd python;python2 test.py
     - cd python;python3 test.py
