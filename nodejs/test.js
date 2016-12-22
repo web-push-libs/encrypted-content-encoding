@@ -68,13 +68,13 @@ function validate() {
   });
 }
 
-function generateInput(minLength) {
-  if (typeof minLength === 'undefined') {
-    minLength = 0;
+function generateInput(len) {
+  if (typeof len === 'undefined') {
+    len = 0;
   }
   var input = plaintext ||
-      crypto.randomBytes(Math.max(minLength, Math.min(length, maxLen)));
-  if (input.length < minLength) {
+      crypto.randomBytes(Math.max(minLen, Math.min(len, maxLen)));
+  if (input.length < minLen) {
     throw new Error('Plaintext is too short');
   }
   logbuf('Input', input);
