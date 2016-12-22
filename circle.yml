@@ -9,7 +9,7 @@ dependencies:
     - nodejs/node_modules
   pre:
     - cd nodejs;npm install
-    - pip install -v pyelliptic cryptography
+    - pip install pyelliptic cryptography
 
 test:
   override:
