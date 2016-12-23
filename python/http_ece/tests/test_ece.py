@@ -231,6 +231,16 @@ class TestEceChecking(unittest.TestCase):
             )
         eq_(ex.exception.message, "Bad padding")
 
+    def test_damage(self):
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                self.m_header + b'\xbb\xc6\xb1\x1dF:~\x0f\x07+\xbe\xaaD\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0}',
+                version='aes128gcm',
+                key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
+                keyid=b64e(os.urandom(192)), # 256 bytes
+            )
+        eq_(ex.exception.message, "Decryption error: InvalidTag()")
+
 
 class TestEceIntegration(unittest.TestCase):
 
@@ -455,7 +465,6 @@ class TestNode(unittest.TestCase):
             outp = 'input'
 
         for data in self.legacy_data:
-            print(repr(data))
             p = data['params'][mode]
             if 'keys' in data:
                 key = None
