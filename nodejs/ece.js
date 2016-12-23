@@ -258,9 +258,12 @@ function parseParams(params) {
   if (isNaN(header.rs)) {
     header.rs = 4096;
   }
-  if (header.rs <= PAD_SIZE[header.version]) {
-    throw new Error('The rs parameter has to be greater than ' +
-                    PAD_SIZE[header.version]);
+  var overhead = PAD_SIZE[header.version];
+  if (header.version === 'aes128gcm') {
+    overhead += TAG_LENGTH;
+  }
+  if (header.rs <= overhead) {
+    throw new Error('The rs parameter has to be greater than ' + overhead);
   }
 
   if (params.salt) {
@@ -365,8 +368,13 @@ function decrypt(buffer, params) {
   var start = 0;
   var result = new Buffer(0);
 
+  var chunkSize = header.rs;
+  if (header.version !== 'aes128gcm') {
+    chunkSize += TAG_LENGTH;
+  }
+
   for (var i = 0; start < buffer.length; ++i) {
-    var end = start + header.rs + TAG_LENGTH;
+    var end = start + chunkSize;
     if (end === buffer.length) {
       throw new Error('Truncated payload');
     }
@@ -457,6 +465,10 @@ function encrypt(buffer, params) {
   var key = deriveKeyAndNonce(header, MODE_ENCRYPT);
   var start = 0;
   var padSize = PAD_SIZE[header.version];
+  var overhead = padSize;
+  if (header.version === 'aes128gcm') {
+    overhead += TAG_LENGTH;
+  }
   var pad = isNaN(parseInt(params.pad, 10)) ? 0 : parseInt(params.pad, 10);
 
   // Note the <= here ensures that we write out a padding-only block at the end
@@ -464,14 +476,14 @@ function encrypt(buffer, params) {
   for (var i = 0; start <= buffer.length; ++i) {
     // Pad so that at least one data byte is in a block.
     var recordPad = Math.min((1 << (padSize * 8)) - 1, // maximum padding
-                             Math.min(header.rs - padSize - 1, pad));
+                             Math.min(header.rs - overhead - 1, pad));
     pad -= recordPad;
 
-    var end = Math.min(start + header.rs - padSize - recordPad, buffer.length);
+    var end = Math.min(start + header.rs - overhead - recordPad, buffer.length);
     var block = encryptRecord(key, i, buffer.slice(start, end),
                               recordPad, padSize);
     result = Buffer.concat([result, block]);
-    start += header.rs - padSize - recordPad;
+    start += header.rs - overhead - recordPad;
   }
   if (pad) {
     throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');
