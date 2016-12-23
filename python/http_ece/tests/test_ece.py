@@ -57,33 +57,31 @@ class TestEce(unittest.TestCase):
     def setUp(self):
         self.keymap = {'valid': pyelliptic.ECC(curve="prime256v1")}
         self.keylabels = {'valid': 'P-256'}
+        self.m_key = os.urandom(16)
         self.m_salt = os.urandom(16)
-        self.m_dh = os.urandom(16)
 
     def tearDown(self):
         self.keymap = None
         self.keylabels = None
 
-    def test_derive_key_no_keyid(self):
+    def test_derive_key_no_keyid_dh(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
                            version='aes128gcm',
                            salt=self.m_salt,
-                           key=None,
-                           dh=self.m_dh,
+                           dh='bogus',
                            keyid=None,
                            keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "'keyid' is not specified with 'dh'")
 
-    def test_derive_key_invalid_key(self):
+    def test_derive_key_invalid_keyid_dh(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
                            version='aes128gcm',
                            salt=self.m_salt,
-                           key=None,
-                           dh=self.m_dh,
+                           dh='bogus',
                            keyid="invalid",
                            keymap=self.keymap,
                            auth_secret=None,
@@ -95,36 +93,19 @@ class TestEce(unittest.TestCase):
             ece.derive_key('invalid',
                            version='aes128gcm',
                            salt=self.m_salt,
-                           key=None,
-                           dh=self.m_dh,
+                           key=self.m_key,
                            keyid="valid",
                            keymap=self.keymap,
                            auth_secret=None,
                            )
         eq_(ex.exception.message, "unknown 'mode' specified: invalid")
 
-    """
-    def test_derive_key_invalid_label(self):
-        ece.keys['invalid'] = ece.keys['valid']
-        with assert_raises(ECEException) as ex:
-            ece.derive_key('encrypt',
-                           salt=self.m_salt,
-                           key=None,
-                           dh=self.m_dh,
-                           keyid="invalid",
-                           auth_secret=None,
-                           )
-        eq_(ex.exception.message, "'keyid' doesn't identify a key label: "
-                                  "invalid")
-    """
-
     def test_derive_key_invalid_salt(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
                            version='aes128gcm',
                            salt=None,
-                           key=None,
-                           dh=self.m_dh,
+                           key=self.m_key,
                            keyid="valid",
                            keymap=self.keymap,
                            auth_secret=None,
@@ -136,8 +117,6 @@ class TestEce(unittest.TestCase):
             ece.derive_key('encrypt',
                            version='invalid',
                            salt=self.m_salt,
-                           key=None,
-                           dh=None,
                            keyid="valid",
                            keymap=self.keymap,
                            auth_secret=None,
@@ -150,8 +129,6 @@ class TestEce(unittest.TestCase):
             ece.derive_key('encrypt',
                            version='aes128gcm',
                            salt=self.m_salt,
-                           key=None,
-                           dh=None,
                            keyid="valid",
                            keymap=self.keymap,
                            auth_secret=None,
@@ -164,7 +141,6 @@ class TestEce(unittest.TestCase):
                        version='aes128gcm',
                        salt=self.m_salt,
                        key=None,
-                       dh=None,
                        keyid="valid",
                        keymap=self.keymap,
                        auth_secret=None,
@@ -174,6 +150,94 @@ class TestEce(unittest.TestCase):
         with assert_raises(ECEException) as ex:
             ece.iv(os.urandom(8), pow(2, 64)+1)
         eq_(ex.exception.message, "Counter too big")
+
+
+class TestEceChecking(unittest.TestCase):
+
+    def setUp(self):
+        self.m_key = os.urandom(16)
+        self.m_input = os.urandom(5)
+        # This header is specific to the padding tests, but can be used elsewhere
+        self.m_header = b'\xaa\xd2\x05}3S\xb7\xff7\xbd\xe4*\xe1\xd5\x0f\xda'
+        self.m_header += struct.pack('!L', 4096) + b'\0'
+
+    def test_encrypt_small_rs(self):
+        with assert_raises(ECEException) as ex:
+            ece.encrypt(
+                self.m_input,
+                version='aes128gcm',
+                key=self.m_key,
+                rs=2,
+            )
+        eq_(ex.exception.message, "Record size too small")
+
+    def test_decrypt_small_rs(self):
+        header = os.urandom(16) + struct.pack('!L', 2) + b'\0'
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                header + self.m_input,
+                version='aes128gcm',
+                key=self.m_key,
+                rs=2,
+            )
+        eq_(ex.exception.message, "Record size too small")
+
+    def test_encrypt_bad_version(self):
+        with assert_raises(ECEException) as ex:
+            ece.encrypt(
+                self.m_input,
+                version='bogus',
+                key=self.m_key,
+            )
+        eq_(ex.exception.message, "Invalid version")
+
+    def test_decrypt_bad_version(self):
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                self.m_input,
+                version='bogus',
+                key=self.m_key,
+            )
+        eq_(ex.exception.message, "Invalid version")
+
+    def test_decrypt_bad_header(self):
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                os.urandom(4),
+                version='aes128gcm',
+                key=self.m_key,
+            )
+        eq_(ex.exception.message, "Could not parse the content header")
+
+    def test_encrypt_long_keyid(self):
+        with assert_raises(ECEException) as ex:
+            ece.encrypt(
+                self.m_input,
+                version='aes128gcm',
+                key=self.m_key,
+                keyid=b64e(os.urandom(192)), # 256 bytes
+            )
+        eq_(ex.exception.message, "keyid is too long")
+
+    def test_overlong_padding(self):
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                self.m_header + b'\xbb\xc1\xb9ev\x0b\xf0E\xd1u\x11\xac\x82\xae\x96\x96\x98{l\x13\xe2C\xf0',
+                version='aes128gcm',
+                key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
+                keyid=b64e(os.urandom(192)), # 256 bytes
+            )
+        eq_(ex.exception.message, "Bad padding")
+
+    def test_nonzero_padding(self):
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                self.m_header + b'\xbb\xc6\xb1\x1dF:~\x0f\x07+\xbe\xaaD\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0~',
+                version='aes128gcm',
+                key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
+                keyid=b64e(os.urandom(192)), # 256 bytes
+            )
+        eq_(ex.exception.message, "Bad padding")
 
 
 class TestEceIntegration(unittest.TestCase):
@@ -395,8 +459,6 @@ class TestNode(unittest.TestCase):
             outp = 'input'
 
         for data in self.legacy_data:
-            print(mode)
-            print(repr(data))
             p = data['params'][mode]
             keyid=p.get('keyid', '')
             if 'keys' in data:

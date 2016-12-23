@@ -14,8 +14,8 @@ from pyelliptic import ecc
 keys = {}
 labels = {}
 
-MAX_BUFFER_SIZE = pow(2, 31) - 1
-MIN_BUFFER_SIZE = 3
+MAX_RECORD_SIZE = pow(2, 31) - 1
+MIN_RECORD_SIZE = 3
 KEY_LENGTH = 16
 
 # Valid content types (ordered from newest, to most obsolete)
@@ -76,11 +76,9 @@ def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
         if mode == "encrypt":
             sender_pub_key = key or keymap[keyid].get_pubkey()
             receiver_pub_key = dh
-        elif mode == "decrypt":
+        else:
             sender_pub_key = dh
             receiver_pub_key = key or keymap[keyid].get_pubkey()
-        else:
-            raise ECEException(u"unknown 'mode' specified: " + mode)
         if version == "aes128gcm":
             context = b"WebPush: info\x00" + receiver_pub_key + sender_pub_key
         else:
@@ -92,6 +90,8 @@ def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
 
     if version not in versions:
         raise ECEException(u"Invalid version")
+    if mode not in ['encrypt', 'decrypt']:
+        raise ECEException(u"unknown 'mode' specified: " + mode)
     if salt is None or len(salt) != 16:
         raise ECEException(u"'salt' must be a 16 octet value")
     if dh is not None:
@@ -160,8 +160,9 @@ def iv(base, counter):
     return base[:4] + struct.pack("!Q", counter ^ mask)
 
 
-def decrypt(content, salt, key=None, keyid=None, keymap=None, keylabels=None,
-            dh=None, rs=4096, auth_secret=None, version="aesgcm", **kwargs):
+def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
+            keyid=None, keymap=None, keylabels=None,
+            rs=4096, version="aesgcm", **kwargs):
     """
     Decrypt a data block
 
@@ -212,7 +213,8 @@ def decrypt(content, salt, key=None, keyid=None, keymap=None, keylabels=None,
             lambda x, y: x << 8 | y, struct.unpack(
                 "!" + ("B" * pad_size), data[0:pad_size])
         )
-        if data[pad_size:pad_size+pad] != (b"\x00" * pad):
+        if pad_size + pad > len(data) or \
+           data[pad_size:pad_size+pad] != (b"\x00" * pad):
             raise ECEException(u"Bad padding")
         data = data[pad_size + pad:]
         return data
@@ -231,12 +233,12 @@ def decrypt(content, salt, key=None, keyid=None, keymap=None, keylabels=None,
     if version == "aes128gcm":
         try:
             content_header = parse_content_header(content)
-        except ECEException as ex:
-            raise ECEException("Could not parse the content header: " +
-                               ex.message)
+        except:
+            raise ECEException("Could not parse the content header")
         salt = content_header['salt']
         keyid = content_header['key_id'] or '' if keyid is None else keyid
         content = content_header['content']
+        rs = content_header['rs']
 
     (key_, nonce_) = derive_key(mode="decrypt", version=version,
                                 salt=salt, key=key,
@@ -259,8 +261,9 @@ def decrypt(content, salt, key=None, keyid=None, keymap=None, keylabels=None,
     return result
 
 
-def encrypt(content, salt=None, key=None, keyid=None, keymap=None, keylabels=None,
-            dh=None, rs=4096, auth_secret=None, version="aesgcm", **kwargs):
+def encrypt(content, salt=None, key=None, dh=None, auth_secret=None,
+            keyid=None, keymap=None, keylabels=None,
+            rs=4096, version="aesgcm", **kwargs):
     """
     Encrypt a data block
 
@@ -290,6 +293,7 @@ def encrypt(content, salt=None, key=None, keyid=None, keymap=None, keylabels=Non
             modes.GCM(iv(nonce, counter)),
             backend=default_backend()
         ).encryptor()
+
         data = encryptor.update((b"\0" * pad_size) + buf)
         data += encryptor.finalize()
         data += encryptor.tag
@@ -309,14 +313,10 @@ def encrypt(content, salt=None, key=None, keyid=None, keymap=None, keylabels=Non
         :type keyid: str
 
         """
-        if len(salt) != 16:
-            raise ECEException("Invalid salt")
         if len(keyid) > 255:
             raise ECEException("keyid is too long")
         header = salt
-        if rs < MIN_BUFFER_SIZE:
-            raise ECEException("Too little content")
-        if rs > MAX_BUFFER_SIZE:
+        if rs > MAX_RECORD_SIZE:
             raise ECEException("Too much content")
         header += struct.pack("!L", rs)
         header += struct.pack("!B", len(keyid))
