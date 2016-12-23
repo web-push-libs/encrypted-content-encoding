@@ -16,5 +16,5 @@ dependencies:
 
 test:
   override:
-    - cd nodejs;node test.js
+    - cd nodejs;node test.js dump verbose
     - cd python;tox
