@@ -5,13 +5,16 @@ var ece = require('./ece.js');
 var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
-// Usage: node test.js [args]
-// If args contains a version (e.g., aes128gcm), filter on versions.
-// If args contains a test function, filter on test functions.
-// If args contains 'verbose' show logs.
-// If args contains 'text=...' set the input string to the UTF-8 encoding of that string.
-// If args contains 'max=<n>' set the maximum input size to that value.
-// If args contains 'dump[=file]' log info to ../encrypt_data.json or the specified file.
+function usage() {
+  console.log('Usage: node test.js [args]');
+  console.log('  <version> - test only the specified version(s)');
+  console.log('    Supported: [aes128gcm,aesgcm,aesgcm128]');
+  console.log('  <test function> - test only the specified function(s)');
+  console.log('  "verbose" enable logging for tests (export ECE_KEYLOG=1 for more)');
+  console.log('  "text=..." sets the input string');
+  console.log('  "max=<n>" sets the maximum input size');
+  console.log('  "dump[=file]" log info to ../encrypt_data.json or the specified file');
+}
 var args = process.argv.slice(2);
 var minLen = 3;
 var maxLen = 100;
@@ -33,6 +36,9 @@ args.forEach(function(arg) {
     dumpFile = '../encrypt_data.json';
   } else if (arg.substring(0, 5) === 'dump=') {
     dumpFile = arg.substring(5);
+  } else if (arg.charAt(0) === '-') {
+    usage();
+    process.exit(2);
   }
 });
 
@@ -78,26 +84,37 @@ function validate() {
   });
 }
 
-function generateInput(len) {
+function generateInput(min) {
   var input;
+  min = Math.max(minLen, min || 0);
   if (plaintext) {
-    if (plaintext.length < minLen) {
+    if (plaintext.length < min) {
       throw new Error('Plaintext is too short');
     }
     input = plaintext;
   } else {
-    if (typeof len === 'undefined') {
-      len = Math.floor((Math.random() * (maxLen - minLen) + minLen));
-    }
-    input = crypto.randomBytes(Math.max(minLen, Math.min(len, maxLen)));
+    var len = Math.floor((Math.random() * (maxLen - min) + min));
+    input = crypto.randomBytes(len);
   }
   logbuf('Input', input);
   return input;
 }
 
+function rsoverhead(version) {
+  if (version === 'aesgcm128') {
+    return 1;
+  }
+  if (version === 'aesgcm') {
+    return 2;
+  }
+  return 18;
+}
+
 function encryptDecrypt(input, encryptParams, decryptParams, keys) {
   // Fill out a default rs.
-  encryptParams.rs = encryptParams.rs || (input.length + minLen);
+  if (!encryptParams.rs) {
+    encryptParams.rs = input.length + rsoverhead(encryptParams.version) + 1;
+  }
   if (decryptParams.version === 'aes128gcm') {
     delete decryptParams.rs;
   } else {
@@ -160,7 +177,7 @@ function exactlyOneRecord(version) {
   var params = {
     version: version,
     key: base64.encode(crypto.randomBytes(16)),
-    rs: input.length + 2 // add exactly the padding
+    rs: input.length + rsoverhead(version)
   };
   encryptDecrypt(input, params, params);
 }
@@ -170,11 +187,14 @@ function detectTruncation(version) {
   var params = {
     version: version,
     key: base64.encode(crypto.randomBytes(16)),
-    rs: input.length + 1 // so we get two records
+    rs: input.length + rsoverhead(version) - 1
   };
   var headerLen = (version === 'aes128gcm') ? 21 : 0;
   var encrypted = ece.encrypt(input, params);
-  var chunkLen = headerLen + params.rs + 16;
+  var chunkLen = headerLen + params.rs;
+  if (version != 'aes128gcm') {
+    chunkLen += 16;
+  }
   assert.ok(chunkLen < encrypted.length);
   encrypted = encrypted.slice(0, chunkLen);
   logbuf('Encrypted', encrypted);
@@ -282,11 +302,11 @@ function checkExamples() {
         key: base64.decode('BO3ZVPxUlnLORbVGMpbT1Q'),
         keyid: 'a1',
         salt: base64.decode('uNCkWiNYzKTnBN9ji3-qWA'),
-        rs: 10,
+        rs: 26,
         pad: 1
       },
       plaintext: Buffer.from('I am the walrus'),
-      ciphertext: base64.decode('uNCkWiNYzKTnBN9ji3-qWAAAAAoCYTGH' +
+      ciphertext: base64.decode('uNCkWiNYzKTnBN9ji3-qWAAAABoCYTGH' +
                                 'OqYFz-0in3dpb-VE2GfBngkaPy6bZus_' +
                                 'qLF79s6zQyTSsA0iLOKyd3JqVIwprNzV' +
                                 'atRCWZGUx_qsFbJBCQu62RqQuR2d')

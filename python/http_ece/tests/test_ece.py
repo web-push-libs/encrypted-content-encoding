@@ -12,12 +12,10 @@ import http_ece as ece
 from http_ece import ECEException
 
 
-TEST_STRING = b"You know my name, look up the number."
-TEST_LEN = len(TEST_STRING)
 TEST_VECTORS = os.path.join(os.sep, "..", "encrypt_data.json")[1:]
 
 
-def log(arg):
+def logmsg(arg):
     """
     print(arg)
     """
@@ -26,13 +24,11 @@ def log(arg):
 
 def logbuf(msg, buf):
     """used for debugging test code."""
-    """
     if buf is None:
-        buf = ''
-    log(msg + ': [' + str(len(buf)) + ']')
+        buf = b''
+    logmsg(msg + ': [' + str(len(buf)) + ']')
     for i in list(range(0, len(buf), 48)):
-        log('    ' + repr(buf[i:i+48]))
-    """
+        logmsg('    ' + repr(buf[i:i+48]))
     return
 
 
@@ -46,10 +42,6 @@ def b64d(arg):
     if arg is None:
         return None
     return base64.urlsafe_b64decode(str(arg) + '===='[:len(arg) % 4:])
-
-
-def rlen():
-    return struct.unpack_from("=H", os.urandom(2))[0]
 
 
 class TestEce(unittest.TestCase):
@@ -74,19 +66,19 @@ class TestEce(unittest.TestCase):
                            keymap=self.keymap,
                            auth_secret=None,
                            )
-        eq_(ex.exception.message, "'keyid' is not specified with 'dh'")
+        eq_(ex.exception.message, "DH requires a private_key")
 
     def test_derive_key_invalid_keyid_dh(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
-                           version='aes128gcm',
+                           version='aesgcm',
                            salt=self.m_salt,
                            dh='bogus',
                            keyid="invalid",
                            keymap=self.keymap,
                            auth_secret=None,
                            )
-        eq_(ex.exception.message, "'keyid' doesn't identify a key: invalid")
+        eq_(ex.exception.message, "DH requires a private_key")
 
     def test_derive_key_invalid_mode(self):
         with assert_raises(ECEException) as ex:
@@ -250,12 +242,23 @@ class TestEceIntegration(unittest.TestCase):
         ece.keys = {}
         ece.labels = {}
 
-    def encrypt_decrypt(self, length, encrypt_params, decrypt_params=None,
+    def _rsoverhead(self, version):
+        if version == 'aesgcm128':
+            return 1;
+        if version == 'aesgcm':
+            return 2;
+        return 18;
+
+    def _generate_input(self, minLen=0):
+        length = struct.unpack('!B', os.urandom(1))[0] + minLen
+        return os.urandom(length);
+
+    def encrypt_decrypt(self, input, encrypt_params, decrypt_params=None,
                         version=None):
         """Run and encrypt/decrypt cycle on some test data
 
-        :param length: Length of data to fake
-        :type length: int
+        :param input: data for input
+        :type length: bytearray
         :param encrypt_params: Dictionary of encryption parameters
         :type encrypt_params: dict
         :param decrypt_params: Optional dictionary of decryption paramseters
@@ -265,119 +268,114 @@ class TestEceIntegration(unittest.TestCase):
         """
         if decrypt_params is None:
             decrypt_params = encrypt_params
+        logbuf("Input", input)
         if "key" in encrypt_params:
             logbuf("Key", encrypt_params["key"])
-        logbuf("Salt", encrypt_params["salt"])
-        if "authSecret" in encrypt_params:
-            logbuf("Context", encrypt_params["authSecret"])
-        # test_string = os.urandom(min(length, maxLen))
-        logbuf("Input", TEST_STRING)
-        encrypted = ece.encrypt(TEST_STRING,
-                                salt=encrypt_params.get("salt"),
+        if version != "aes128gcm":
+            salt = os.urandom(16)
+            decrypt_rs_default = 4096
+        else:
+            salt = None
+            decrypt_rs_default = None
+        logbuf("Salt", salt)
+        if "auth_secret" in encrypt_params:
+            logbuf("Auth Secret", encrypt_params["auth_secret"])
+        encrypted = ece.encrypt(input,
+                                salt=salt,
                                 key=encrypt_params.get("key"),
                                 keyid=encrypt_params.get("keyid"),
                                 keymap=decrypt_params.get("keymap"),
                                 dh=encrypt_params.get("dh"),
-                                rs=encrypt_params.get("rs"),
-                                auth_secret=encrypt_params.get("authSecret"),
+                                private_key=encrypt_params.get("private_key"),
+                                auth_secret=encrypt_params.get("auth_secret"),
+                                rs=encrypt_params.get("rs", 4096),
                                 version=version)
         logbuf("Encrypted", encrypted)
         decrypted = ece.decrypt(encrypted,
-                                salt=decrypt_params.get("salt"),
+                                salt=salt,
                                 key=decrypt_params.get("key"),
                                 keyid=decrypt_params.get("keyid"),
                                 keymap=decrypt_params.get("keymap"),
                                 dh=decrypt_params.get("dh"),
-                                rs=decrypt_params.get("rs"),
-                                auth_secret=decrypt_params.get("authSecret"),
+                                private_key=decrypt_params.get("private_key"),
+                                auth_secret=decrypt_params.get("auth_secret"),
+                                rs=decrypt_params.get("rs", decrypt_rs_default),
                                 version=version)
         logbuf("Decrypted", decrypted)
-        eq_(TEST_STRING, decrypted)
+        eq_(input, decrypted)
         return dict(
             version=version,
-            source=TEST_STRING,
+            source=input,
             salt=b64e(encrypt_params.get("salt")),
             key=repr(encrypt_params.get(
                 "key",
                 ece.keys.get(encrypt_params.get('keyid')))),
             dh=b64e(encrypt_params.get("dh")),
             rs=encrypt_params.get("rs", 0),
-            auth_secret=b64e(encrypt_params.get("authSecret")),
+            auth_secret=b64e(encrypt_params.get("auth_secret")),
             encrypted=b64e(encrypted),
         )
 
     def use_explicit_key(self, version=None):
-        salt = None
-        if version != "aes128gcm":
-            salt = os.urandom(16)
         params = {
             "key": os.urandom(16),
-            "salt": salt,
-            "rs": rlen() + 1
         }
-        self.encrypt_decrypt(rlen() + 1, params, version=version)
+        self.encrypt_decrypt(self._generate_input(), params, version=version)
 
     def auth_secret(self, version):
-        salt = None
-        if version != "aes128gcm":
-            salt = os.urandom(16)
         params = {
             "key": os.urandom(16),
-            "salt": salt,
-            "rs": rlen() + 1,
-            "authSecret": os.urandom(10)
+            "auth_secret": os.urandom(16)
         }
-        self.encrypt_decrypt(rlen() + 1, params, version=version)
+        self.encrypt_decrypt(self._generate_input(), params, version=version)
 
     def exactly_one_record(self, version=None):
-        length = min(rlen(), TEST_LEN)
-        salt = None
-        if version != "aes128gcm":
-            salt = os.urandom(16)
+        input = self._generate_input(1)
         params = {
             "key": os.urandom(16),
-            "salt": salt,
-            "rs": length + 2
+            "rs": len(input) + self._rsoverhead(version)
         }
-        self.encrypt_decrypt(length, params, version=version)
+        self.encrypt_decrypt(input, params, version=version)
 
-    def detect_truncation(self, version=None):
+    def detect_truncation(self, version):
+        input = self._generate_input(2)
         key = os.urandom(16)
-        salt = None
-        ex_msg = 'Decryption error: InvalidTag()'
         if version != "aes128gcm":
             salt = os.urandom(16)
-            ex_msg = 'Message truncated'
-        if version == "aesgcm128":
-            pad_size = 1
         else:
-            pad_size = 2
+            salt = None
 
-        rs = len(TEST_STRING) + pad_size
-        encrypted = ece.encrypt(TEST_STRING, salt=salt, key=key, rs=rs,
+        rs = len(input) + self._rsoverhead(version) - 1
+        encrypted = ece.encrypt(input, salt=salt, key=key, rs=rs,
                                 version=version)
+        if version == 'aes128gcm':
+            chunk = encrypted[0:21+rs]
+        else:
+            chunk = encrypted[0:rs+16]
         with assert_raises(ECEException) as ex:
-            ece.decrypt(encrypted[0:rs + 16],
-                        salt=salt, key=key,
-                        rs=rs, version=version)
-        eq_(ex.exception.message, ex_msg)
+            ece.decrypt(chunk, salt=salt, key=key, rs=rs, version=version)
+        eq_(ex.exception.message, "Message truncated")
 
-    def use_key_id(self, version=None):
+    def use_key_id(self, version):
         key = os.urandom(16)
         keymap = {'k': key }
-        salt = None
-        if version != "aes128gcm":
-            salt = os.urandom(16)
-        params = {
+        encrypt_params = {
             "keyid": 'k',
             "keymap": keymap,
-            "salt": salt,
-            "rs": rlen() + 1
         }
-        self.encrypt_decrypt(rlen(), params, params,
-                             version=version)
+        # aes128gcm encodes the keyid
+        if version != 'aes128gcm':
+            decrypt_id = encrypt_params['keyid']
+        else:
+            decrypt_id = None
+        decrypt_params = {
+            "keyid": decrypt_id,
+            "keymap": keymap,
+        }
+        self.encrypt_decrypt(self._generate_input(), encrypt_params,
+                             decrypt_params, version=version)
 
-    def use_dh(self, version=None):
+    def use_dh(self, version):
         def is_uncompressed(k):
             b1 = k.get_pubkey()[0:1]
             assert struct.unpack("B", b1)[0] == 4, "is an uncompressed point"
@@ -385,39 +383,37 @@ class TestEceIntegration(unittest.TestCase):
         # the static key is used by the receiver
         static_key = pyelliptic.ECC(curve="prime256v1")
         is_uncompressed(static_key)
-        salt = None
-        if version != "aes128gcm":
-            salt = os.urandom(16)
 
-        log("Receiver private: " + repr(static_key.get_privkey()))
-        log("Receiver public: " + repr(static_key.get_pubkey()))
+        logbuf("Receiver private", static_key.get_privkey())
+        logbuf("Receiver public", static_key.get_pubkey())
 
         # the ephemeral key is used by the sender
         ephemeral_key = pyelliptic.ECC(curve="prime256v1")
         is_uncompressed(ephemeral_key)
 
-        log("Sender private: " + repr(ephemeral_key.get_privkey()))
-        log("Sender public: " + repr(ephemeral_key.get_pubkey()))
+        logbuf("Sender private", ephemeral_key.get_privkey())
+        logbuf("Sender public", ephemeral_key.get_pubkey())
 
-        keymap = {'static': static_key, 'ephemeral': ephemeral_key }
+        auth_secret = os.urandom(16)
+
+        if version != "aes128gcm":
+            decrypt_dh = ephemeral_key.get_pubkey()
+        else:
+            decrypt_dh = None
 
         encrypt_params = {
-            "keyid": 'ephemeral',
-            "keymap": keymap,
+            "private_key": ephemeral_key,
             "dh": static_key.get_pubkey(),
-            "salt": salt,
-            "rs": rlen() + 1,
+            "auth_secret": auth_secret,
         }
         decrypt_params = {
-            "keyid": 'static',
-            "keymap": keymap,
-            "dh": ephemeral_key.get_pubkey(),
-            "salt": salt,
-            "rs": encrypt_params["rs"],
+            "private_key": static_key,
+            "dh": decrypt_dh,
+            "auth_secret": auth_secret,
         }
 
-        self.encrypt_decrypt(rlen(), encrypt_params, decrypt_params,
-                             version)
+        self.encrypt_decrypt(self._generate_input(), encrypt_params,
+                             decrypt_params, version)
 
     def test_types(self):
         for ver in ["aes128gcm", "aesgcm", "aesgcm128"]:
@@ -459,35 +455,36 @@ class TestNode(unittest.TestCase):
             outp = 'input'
 
         for data in self.legacy_data:
+            print(repr(data))
             p = data['params'][mode]
-            keyid=p.get('keyid', '')
             if 'keys' in data:
-                dh = b64d(data['keys'][remote]['public'])
                 key = None
-                keymap = {
-                    keyid: pyelliptic.ECC(
-                        curve='prime256v1',
-                        pubkey=b64d(data['keys'][local]['public']),
-                        privkey=b64d(data['keys'][local]['private']),
-                    )
-                }
+                private_key = pyelliptic.ECC(
+                    curve='prime256v1',
+                    pubkey=b64d(data['keys'][local]['public']),
+                    privkey=b64d(data['keys'][local]['private']),
+                )
             else:
-                dh = None
                 key = b64d(p['key'])
-                keymap = {}
+                private_key = None
 
             if 'authSecret' in p:
                 auth_secret = b64d(p['authSecret'])
             else:
                 auth_secret = None
+            if 'dh' in p:
+                dh = b64d(p['dh'])
+            else:
+                dh = None
+
             result = func(
                 b64d(data[inp]),
                 salt=b64d(p['salt']),
                 key=key,
                 dh=dh,
                 auth_secret=auth_secret,
-                keyid=keyid,
-                keymap=keymap,
+                keyid=p.get('keyid'),
+                private_key=private_key,
                 rs=p.get('rs', 4096),
                 version=p['version'],
             )
