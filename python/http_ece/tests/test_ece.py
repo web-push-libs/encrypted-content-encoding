@@ -380,36 +380,59 @@ class TestNode(unittest.TestCase):
         self.legacy_data = json.loads(f.read())
         f.close()
 
-    def test_decrypt(self):
+    def _run(self, mode):
+        if mode == 'encrypt':
+            func = ece.encrypt
+            local = 'sender'
+            remote = 'receiver'
+            inp = 'input'
+            outp = 'encrypted'
+        else:
+            func = ece.decrypt
+            local = 'receiver'
+            remote = 'sender'
+            inp = 'encrypted'
+            outp = 'input'
+
         for data in self.legacy_data:
-            print(data)
+            print(mode)
+            print(repr(data))
+            p = data['params'][mode]
+            keyid=p.get('keyid', '')
             if 'keys' in data:
-                dh = b64d(data['keys']['sender']['public'])
+                dh = b64d(data['keys'][remote]['public'])
                 key = None
                 keymap = {
-                    'static': pyelliptic.ECC(
-                        pubkey=b64d(data['keys']['receiver']['public']),
-                        privkey=b64d(data['keys']['receiver']['private']),
+                    keyid: pyelliptic.ECC(
+                        curve='prime256v1',
+                        pubkey=b64d(data['keys'][local]['public']),
+                        privkey=b64d(data['keys'][local]['private']),
                     )
                 }
             else:
                 dh = None
-                key = b64d(data['params']['decrypt']['key'])
+                key = b64d(p['key'])
                 keymap = {}
 
-            if 'authSecret' in data['params']['decrypt']:
-                auth_secret = b64d(data['params']['decrypt']['authSecret'])
+            if 'authSecret' in p:
+                auth_secret = b64d(p['authSecret'])
             else:
                 auth_secret = None
-            decrypted = ece.decrypt(
-                b64d(data['encrypted']),
-                salt=b64d(data['params']['decrypt']['salt']),
+            result = func(
+                b64d(data[inp]),
+                salt=b64d(p['salt']),
                 key=key,
                 dh=dh,
                 auth_secret=auth_secret,
-                keyid='static',
+                keyid=keyid,
                 keymap=keymap,
-                rs=data['params']['decrypt']['rs'],
-                version=data['version'],
+                rs=p.get('rs', 4096),
+                version=p['version'],
             )
-            eq_(b64d(data['input']), decrypted)
+            eq_(b64d(data[outp]), result)
+
+    def test_decrypt(self):
+        self._run('decrypt')
+
+    def test_encrypt(self):
+        self._run('encrypt')

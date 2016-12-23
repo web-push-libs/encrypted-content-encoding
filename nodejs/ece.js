@@ -125,7 +125,7 @@ function extractDH(header, mode) {
   return {
     secret: key.computeSecret(header.dh),
     context: Buffer.concat([
-      decode(header.keylabels[header.keyid]),
+      Buffer.from(header.keylabels[header.keyid], 'ascii'),
       Buffer.from([0]),
       lengthPrefix(receiverPubKey), // user agent
       lengthPrefix(senderPubKey)    // application server

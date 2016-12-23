@@ -79,13 +79,17 @@ function validate() {
 }
 
 function generateInput(len) {
-  if (typeof len === 'undefined') {
-    len = 0;
-  }
-  var input = plaintext ||
-      crypto.randomBytes(Math.max(minLen, Math.min(len, maxLen)));
-  if (input.length < minLen) {
-    throw new Error('Plaintext is too short');
+  var input;
+  if (plaintext) {
+    if (plaintext.length < minLen) {
+      throw new Error('Plaintext is too short');
+    }
+    input = plaintext;
+  } else {
+    if (typeof len === 'undefined') {
+      len = Math.floor((Math.random() * (maxLen - minLen) + minLen));
+    }
+    input = crypto.randomBytes(Math.max(minLen, Math.min(len, maxLen)));
   }
   logbuf('Input', input);
   return input;
@@ -197,11 +201,7 @@ function useKeyId(version) {
     keymap: keymap
   };
 
-  var keyData = {
-    keyid: keyid,
-    key: base64.encode(keyid)
-  }
-  encryptDecrypt(input, params, params, keyData);
+  encryptDecrypt(input, params, params);
 }
 
 function useDH(version) {

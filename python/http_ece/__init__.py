@@ -115,6 +115,9 @@ def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
     elif version == "aes128gcm":
         keyinfo = b"Content-Encoding: aes128gcm\x00"
         nonceinfo = b"Content-Encoding: nonce\x00"
+        if dh is None:
+            # Only mix the authentication secret when using DH for aes128gcm
+            auth_secret = None
 
     if auth_secret is not None:
         if version == "aes128gcm":
@@ -292,7 +295,7 @@ def encrypt(content, salt=None, key=None, keyid=None, keymap=None, keylabels=Non
         data += encryptor.tag
         return data
 
-    def compose_aes128gcm(salt, content, rs=4096, key_id=""):
+    def compose_aes128gcm(salt, content, rs, keyid):
         """Compose the header and content of an aes128gcm encrypted
         message body
 
@@ -302,25 +305,22 @@ def encrypt(content, salt=None, key=None, keyid=None, keymap=None, keylabels=Non
         :type content: str
         :param rs: Override for the content length
         :type rs: int
-        :param key_id: The optional key_id to use for this message
-        :type key_id: str
+        :param keyid: The keyid to use for this message
+        :type keyid: str
 
         """
         if len(salt) != 16:
             raise ECEException("Invalid salt")
-        if key_id is None:
-            key_id = ''
-        if len(key_id) > 255:
-            raise ECEException("key_id is too long")
+        if len(keyid) > 255:
+            raise ECEException("keyid is too long")
         header = salt
-        rs = rs or len(content)
         if rs < MIN_BUFFER_SIZE:
             raise ECEException("Too little content")
         if rs > MAX_BUFFER_SIZE:
             raise ECEException("Too much content")
         header += struct.pack("!L", rs)
-        header += struct.pack("!B", len(key_id))
-        header += key_id.encode('utf-8')
+        header += struct.pack("!B", len(keyid))
+        header += keyid
         return header + content
 
     if version not in versions:
@@ -343,16 +343,21 @@ def encrypt(content, salt=None, key=None, keyid=None, keymap=None, keylabels=Non
                                 keyid=keyid, keymap=keymap, keylabels=keylabels)
     if rs <= pad_size:
         raise ECEException(u"Record size too small")
-    rs -= pad_size  # account for padding
+    chunk_size = rs - pad_size
 
     result = b""
     counter = 0
 
-    # the extra pad_size on the loop ensures that we produce a padding only
-    # record if the data length is an exact multiple of rs-pad_size
-    for i in list(range(0, len(content) + pad_size, rs)):
-        result += encrypt_record(key_, nonce_, counter, content[i:i + rs])
+    # the extra one on the loop ensures that we produce a padding only
+    # record if the data length is an exact multiple of the chunk size
+    for i in list(range(0, len(content) + 1, chunk_size)):
+        result += encrypt_record(key_, nonce_, counter,
+                                 content[i:i + chunk_size])
         counter += 1
     if version == "aes128gcm":
-        return compose_aes128gcm(salt, result, rs, key_id=keyid)
+        if keyid == '' and keyid in keymap:
+            kid = keymap[keyid].get_pubkey()
+        else:
+            kid = (keyid or '').encode('utf-8')
+        return compose_aes128gcm(salt, result, rs, keyid=kid)
     return result
