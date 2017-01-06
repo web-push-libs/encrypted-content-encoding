@@ -232,14 +232,13 @@ def decrypt(content, salt=None, key=None,
     def unpad(data, last):
         i = len(data) - 1
         for i in range(len(data) - 1, -1, -1):
-            x = struct.unpack('B', data[i:i+1])[0]
-            if x != 0:
-                if not last and x != 1:
+            v = struct.unpack('B', data[i:i+1])[0]
+            if v != 0:
+                if not last and v != 1:
                     raise ECEException(u'record delimiter != 1')
-                if last and x != 2:
+                if last and v != 2:
                     raise ECEException(u'last record delimiter != 2')
                 return data[0:i]
-            i -= 1
         raise ECEException(u'all zero record plaintext')
 
     if version not in versions:
@@ -341,7 +340,7 @@ def encrypt(content, salt=None, key=None,
         if version == 'aes128gcm':
             data = encryptor.update(buf + (b'\x02' if last else b'\x01'))
         else:
-            data = encryptor.update((b"\0" * pad_size) + buf)
+            data = encryptor.update((b"\x00" * pad_size) + buf)
         data += encryptor.finalize()
         data += encryptor.tag
         return data

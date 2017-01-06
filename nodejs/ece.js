@@ -338,7 +338,7 @@ function unpad(data, last) {
         }
       } else {
         if (data[i] !== 1) {
-          throw new Error('record needs to start padding with a 1');
+          throw new Error('last record needs to start padding with a 2');
         }
       }
       return data.slice(0, i);
