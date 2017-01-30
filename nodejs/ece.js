@@ -25,7 +25,7 @@ var saved = {
   keylabels: {}
 };
 var AES_GCM = 'aes-128-gcm';
-var PAD_SIZE = { 'aes128gcm': 2, 'aesgcm': 2, 'aesgcm128': 1 };
+var PAD_SIZE = { 'aes128gcm': 1, 'aesgcm': 2, 'aesgcm128': 1 };
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
 var NONCE_LENGTH = 12;
@@ -258,9 +258,12 @@ function parseParams(params) {
   if (isNaN(header.rs)) {
     header.rs = 4096;
   }
-  if (header.rs <= PAD_SIZE[header.version]) {
-    throw new Error('The rs parameter has to be greater than ' +
-                    PAD_SIZE[header.version]);
+  var overhead = PAD_SIZE[header.version];
+  if (header.version === 'aes128gcm') {
+    overhead += TAG_LENGTH;
+  }
+  if (header.rs <= overhead) {
+    throw new Error('The rs parameter has to be greater than ' + overhead);
   }
 
   if (params.salt) {
@@ -310,15 +313,8 @@ function readHeader(buffer, header) {
   return 21 + idsz;
 }
 
-function decryptRecord(key, counter, buffer, header) {
-  keylog('decrypt', buffer);
-  var nonce = generateNonce(key.nonce, counter);
-  var gcm = crypto.createDecipheriv(AES_GCM, key.key, nonce);
-  gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
-  var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
-  data = Buffer.concat([data, gcm.final()]);
-  keylog('decrypted', data);
-  var padSize = PAD_SIZE[header.version];
+function unpadLegacy(data, version) {
+  var padSize = PAD_SIZE[version];
   var pad = data.readUIntBE(0, padSize);
   if (pad + padSize > data.length) {
     throw new Error('padding exceeds block size');
@@ -330,6 +326,40 @@ function decryptRecord(key, counter, buffer, header) {
     throw new Error('invalid padding');
   }
   return data.slice(padSize + pad);
+}
+
+function unpad(data, last) {
+  var i = data.length - 1;
+  while(i > 0) {
+    if (data[i]) {
+      if (last) {
+        if (data[i] !== 2) {
+          throw new Error('last record needs to start padding with a 2');
+        }
+      } else {
+        if (data[i] !== 1) {
+          throw new Error('last record needs to start padding with a 2');
+        }
+      }
+      return data.slice(0, i);
+    }
+    --i;
+  }
+  throw new Error('all zero plaintext');
+}
+
+function decryptRecord(key, counter, buffer, header, last) {
+  keylog('decrypt', buffer);
+  var nonce = generateNonce(key.nonce, counter);
+  var gcm = crypto.createDecipheriv(AES_GCM, key.key, nonce);
+  gcm.setAuthTag(buffer.slice(buffer.length - TAG_LENGTH));
+  var data = gcm.update(buffer.slice(0, buffer.length - TAG_LENGTH));
+  data = Buffer.concat([data, gcm.final()]);
+  keylog('decrypted', data);
+  if (header.version !== 'aes128gcm') {
+    return unpadLegacy(data, header.version);
+  }
+  return unpad(data, last);
 }
 
 // TODO: this really should use the node streams stuff
@@ -365,9 +395,14 @@ function decrypt(buffer, params) {
   var start = 0;
   var result = new Buffer(0);
 
+  var chunkSize = header.rs;
+  if (header.version !== 'aes128gcm') {
+    chunkSize += TAG_LENGTH;
+  }
+
   for (var i = 0; start < buffer.length; ++i) {
-    var end = start + header.rs + TAG_LENGTH;
-    if (end === buffer.length) {
+    var end = start + chunkSize;
+    if (header.version !== 'aes128gcm' && end === buffer.length) {
       throw new Error('Truncated payload');
     }
     end = Math.min(end, buffer.length);
@@ -375,30 +410,43 @@ function decrypt(buffer, params) {
       throw new Error('Invalid block: too small at ' + i);
     }
     var block = decryptRecord(key, i, buffer.slice(start, end),
-                              header);
+                              header, end >= buffer.length);
     result = Buffer.concat([result, block]);
     start = end;
   }
   return result;
 }
 
-function encryptRecord(key, counter, buffer, pad, padSize) {
+function encryptRecord(key, counter, buffer, pad, header, last) {
   keylog('encrypt', buffer);
   pad = pad || 0;
   var nonce = generateNonce(key.nonce, counter);
   var gcm = crypto.createCipheriv(AES_GCM, key.key, nonce);
+
+  var ciphertext = [];
+  var padSize = PAD_SIZE[header.version];
   var padding = new Buffer(pad + padSize);
   padding.fill(0);
-  padding.writeUIntBE(pad, 0, padSize);
-  keylog('padding', padding);
-  var epadding = gcm.update(padding);
-  var ebuffer = gcm.update(buffer);
+
+  if (header.version !== 'aes128gcm') {
+    padding.writeUIntBE(pad, 0, padSize);
+    keylog('padding', padding);
+    ciphertext.push(gcm.update(padding));
+    ciphertext.push(gcm.update(buffer));
+  } else {
+    ciphertext.push(gcm.update(buffer));
+    padding.writeUIntBE(last ? 2 : 1, 0, 1);
+    keylog('padding', padding);
+    ciphertext.push(gcm.update(padding));
+  }
+
   gcm.final();
   var tag = gcm.getAuthTag();
   if (tag.length !== TAG_LENGTH) {
     throw new Error('invalid tag generated');
   }
-  return keylog('encrypted', Buffer.concat([epadding, ebuffer, tag]));
+  ciphertext.push(tag);
+  return keylog('encrypted', Buffer.concat(ciphertext));
 }
 
 function writeHeader(header) {
@@ -457,21 +505,36 @@ function encrypt(buffer, params) {
   var key = deriveKeyAndNonce(header, MODE_ENCRYPT);
   var start = 0;
   var padSize = PAD_SIZE[header.version];
+  var overhead = padSize;
+  if (header.version === 'aes128gcm') {
+    overhead += TAG_LENGTH;
+  }
   var pad = isNaN(parseInt(params.pad, 10)) ? 0 : parseInt(params.pad, 10);
 
-  // Note the <= here ensures that we write out a padding-only block at the end
-  // of a buffer.
-  for (var i = 0; start <= buffer.length; ++i) {
+  var counter = 0;
+  var last = false;
+  while (!last) {
     // Pad so that at least one data byte is in a block.
-    var recordPad = Math.min((1 << (padSize * 8)) - 1, // maximum padding
-                             Math.min(header.rs - padSize - 1, pad));
+    var recordPad = Math.min(header.rs - overhead - 1, pad);
+    if (header.version !== 'aes128gcm') {
+      recordPad = Math.min((1 << (padSize * 8)) - 1, recordPad);
+    }
     pad -= recordPad;
 
-    var end = Math.min(start + header.rs - padSize - recordPad, buffer.length);
-    var block = encryptRecord(key, i, buffer.slice(start, end),
-                              recordPad, padSize);
+    var end = start + header.rs - overhead - recordPad;
+    if (header.version !== 'aes128gcm') {
+      // The > here ensures that we write out a padding-only block at the end
+      // of a buffer.
+      last = end > buffer.length;
+    } else {
+      last = end >= buffer.length && pad <= 0;
+    }
+    var block = encryptRecord(key, counter, buffer.slice(start, end),
+                              recordPad, header, last);
     result = Buffer.concat([result, block]);
-    start += header.rs - padSize - recordPad;
+
+    start = end;
+    ++counter;
   }
   if (pad) {
     throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');

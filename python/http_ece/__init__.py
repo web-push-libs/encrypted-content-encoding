@@ -17,10 +17,12 @@ labels = {}
 MAX_RECORD_SIZE = pow(2, 31) - 1
 MIN_RECORD_SIZE = 3
 KEY_LENGTH = 16
+NONCE_LENGTH = 12
+TAG_LENGTH = 16
 
 # Valid content types (ordered from newest, to most obsolete)
 versions = {
-    "aes128gcm": {"pad": 2},
+    "aes128gcm": {"pad": 1},
     "aesgcm": {"pad": 2},
     "aesgcm128": {"pad": 1},
 }
@@ -34,7 +36,8 @@ class ECEException(Exception):
 # TODO: turn this into a class so that we don't grow/stomp keys.
 
 
-def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
+def derive_key(mode, version, salt=None, key=None,
+               private_key=None, dh=None, auth_secret=None,
                keyid=None, keymap=None, keylabels=None):
     """Derive the encryption key
 
@@ -42,8 +45,10 @@ def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
     :type mode: enumerate('encrypt', 'decrypt)
     :param salt: encryption salt value
     :type salt: str
-    :param key: local public key
+    :param key: raw key
     :type key: str
+    :param private_key: DH private key
+    :type key: object
     :param dh: Diffie Helman public key value
     :type dh: str
     :param keyid: key identifier label
@@ -65,39 +70,41 @@ def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
     def build_info(base, info_context):
         return b"Content-Encoding: " + base + b"\0" + info_context
 
-    def derive_dh(mode, version, dh, keyid, keymap, keylabels):
+    def derive_dh(mode, version, private_key, dh, label):
         def length_prefix(key):
             return struct.pack("!H", len(key)) + key
 
-        if keyid is None:
-            raise ECEException(u"'keyid' is not specified with 'dh'")
-        if keyid not in keymap:
-            raise ECEException(u"'keyid' doesn't identify a key: " + keyid)
         if mode == "encrypt":
-            sender_pub_key = key or keymap[keyid].get_pubkey()
+            sender_pub_key = private_key.get_pubkey()
             receiver_pub_key = dh
         else:
             sender_pub_key = dh
-            receiver_pub_key = key or keymap[keyid].get_pubkey()
+            receiver_pub_key = private_key.get_pubkey()
+
         if version == "aes128gcm":
             context = b"WebPush: info\x00" + receiver_pub_key + sender_pub_key
         else:
-            label = keylabels.get(keyid, 'P-256').encode('utf-8')
             context = (label + b"\0" + length_prefix(receiver_pub_key) +
                        length_prefix(sender_pub_key))
 
-        return keymap[keyid].get_ecdh_key(dh), context
+        return private_key.get_ecdh_key(dh), context
 
     if version not in versions:
         raise ECEException(u"Invalid version")
     if mode not in ['encrypt', 'decrypt']:
         raise ECEException(u"unknown 'mode' specified: " + mode)
-    if salt is None or len(salt) != 16:
+    if salt is None or len(salt) != KEY_LENGTH:
         raise ECEException(u"'salt' must be a 16 octet value")
-    if dh is not None:
-        (secret, context) = derive_dh(mode=mode, version=version, dh=dh,
-                                      keyid=keyid, keymap=keymap,
-                                      keylabels=keylabels)
+    if dh is not None or private_key is not None:
+        # We need a key in the keymap unless we're decrypting 'aes128gcm', where
+        # we can get the key from the keyid.
+        if private_key is None:
+            raise ECEException(u"DH requires a private_key")
+        label = keylabels.get(keyid, 'P-256').encode('utf-8')
+
+        (secret, context) = derive_dh(mode=mode, version=version,
+                                      private_key=private_key, dh=dh,
+                                      label=label)
     elif keyid in keymap:
         secret = keymap[keyid]
     else:
@@ -135,14 +142,14 @@ def derive_key(mode, version, salt=None, key=None, dh=None, auth_secret=None,
 
     hkdf_key = HKDF(
         algorithm=hashes.SHA256(),
-        length=16,
+        length=KEY_LENGTH,
         salt=salt,
         info=keyinfo,
         backend=default_backend()
     )
     hkdf_nonce = HKDF(
         algorithm=hashes.SHA256(),
-        length=12,
+        length=NONCE_LENGTH,
         salt=salt,
         info=nonceinfo,
         backend=default_backend()
@@ -160,7 +167,8 @@ def iv(base, counter):
     return base[:4] + struct.pack("!Q", counter ^ mask)
 
 
-def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
+def decrypt(content, salt=None, key=None,
+            private_key=None, dh=None, auth_secret=None,
             keyid=None, keymap=None, keylabels=None,
             rs=4096, version="aesgcm", **kwargs):
     """
@@ -172,6 +180,8 @@ def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
     :type salt: str
     :param key: local public key
     :type key: str
+    :param private_key: DH private key
+    :type key: object
     :param keyid: Internal key identifier for private key info
     :type keyid: str
     :param dh: Remote Diffie Hellman sequence
@@ -197,18 +207,19 @@ def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
         return {
             "salt": content[:16],
             "rs": struct.unpack("!L", content[16:20])[0],
-            "id_len": id_len,
-            "key_id": content[21:21 + id_len],
+            "keyid": content[21:21 + id_len],
             "content": content[21 + id_len:],
         }
 
     def decrypt_record(key, nonce, counter, content):
         decryptor = Cipher(
             algorithms.AES(key),
-            modes.GCM(iv(nonce, counter), tag=content[-16:]),
+            modes.GCM(iv(nonce, counter), tag=content[-TAG_LENGTH:]),
             backend=default_backend()
         ).decryptor()
-        data = decryptor.update(content[:-16]) + decryptor.finalize()
+        return decryptor.update(content[:-TAG_LENGTH]) + decryptor.finalize()
+
+    def unpad_legacy(data):
         pad = functools.reduce(
             lambda x, y: x << 8 | y, struct.unpack(
                 "!" + ("B" * pad_size), data[0:pad_size])
@@ -216,8 +227,20 @@ def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
         if pad_size + pad > len(data) or \
            data[pad_size:pad_size+pad] != (b"\x00" * pad):
             raise ECEException(u"Bad padding")
-        data = data[pad_size + pad:]
-        return data
+        return data[pad_size + pad:]
+
+    def unpad(data, last):
+        i = len(data) - 1
+        for i in range(len(data) - 1, -1, -1):
+            x = struct.unpack('B', data[i:i+1])[0]
+            if x != 0:
+                if not last and x != 1:
+                    raise ECEException(u'record delimiter != 1')
+                if last and x != 2:
+                    raise ECEException(u'last record delimiter != 2')
+                return data[0:i]
+            i -= 1
+        raise ECEException(u'all zero record plaintext')
 
     if version not in versions:
         raise ECEException(u"Invalid version")
@@ -229,6 +252,8 @@ def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
         keymap = keys
     if keylabels is None:
         keylabels = labels
+    if keyid is not None and keyid in keymap and isinstance(keymap[keyid], ecc.ECC):
+        private_key = keymap[keyid]
 
     if version == "aes128gcm":
         try:
@@ -236,32 +261,49 @@ def decrypt(content, salt=None, key=None, dh=None, auth_secret=None,
         except:
             raise ECEException("Could not parse the content header")
         salt = content_header['salt']
-        keyid = content_header['key_id'] or '' if keyid is None else keyid
-        content = content_header['content']
         rs = content_header['rs']
+        keyid = content_header['keyid']
+        if private_key is not None and not dh:
+            dh = keyid
+        else:
+            keyid = keyid.decode('utf-8')
+        content = content_header['content']
+        overhead = pad_size + 16
+    else:
+        overhead = pad_size
 
     (key_, nonce_) = derive_key(mode="decrypt", version=version,
                                 salt=salt, key=key,
-                                dh=dh, auth_secret=auth_secret,
+                                private_key=private_key, dh=dh,
+                                auth_secret=auth_secret,
                                 keyid=keyid, keymap=keymap, keylabels=keylabels)
-    if rs <= pad_size:
+    if rs <= overhead:
         raise ECEException(u"Record size too small")
-    rs += 16  # account for tags
-    if len(content) % rs == 0:
+    if version != "aes128gcm":
+        chunk = rs + 16  # account for tags in old versions
+    else:
+        chunk = rs
+    if len(content) % chunk == 0 and version != 'aes128gcm':
         raise ECEException(u"Message truncated")
 
-    result = b""
+    result = b''
     counter = 0
     try:
-        for i in list(range(0, len(content), rs)):
-            result += decrypt_record(key_, nonce_, counter, content[i:i + rs])
+        for i in list(range(0, len(content), chunk)):
+            data = decrypt_record(key_, nonce_, counter, content[i:i + chunk])
+            if version == 'aes128gcm':
+                last = (i + chunk) >= len(content)
+                result += unpad(data, last)
+            else:
+                result += unpad_legacy(data)
             counter += 1
     except InvalidTag as ex:
         raise ECEException("Decryption error: {}".format(repr(ex)))
     return result
 
 
-def encrypt(content, salt=None, key=None, dh=None, auth_secret=None,
+def encrypt(content, salt=None, key=None,
+            private_key=None, dh=None, auth_secret=None,
             keyid=None, keymap=None, keylabels=None,
             rs=4096, version="aesgcm", **kwargs):
     """
@@ -273,6 +315,8 @@ def encrypt(content, salt=None, key=None, dh=None, auth_secret=None,
     :type salt: str
     :param key: Encryption key data
     :type key: str
+    :param private_key: DH private key
+    :type key: object
     :param keyid: Internal key identifier for private key info
     :type keyid: str
     :param dh: Remote Diffie Hellman sequence
@@ -287,14 +331,17 @@ def encrypt(content, salt=None, key=None, dh=None, auth_secret=None,
     :rtype str
 
     """
-    def encrypt_record(key, nonce, counter, buf):
+    def encrypt_record(key, nonce, counter, buf, last):
         encryptor = Cipher(
             algorithms.AES(key),
             modes.GCM(iv(nonce, counter)),
             backend=default_backend()
         ).encryptor()
 
-        data = encryptor.update((b"\0" * pad_size) + buf)
+        if version == 'aes128gcm':
+            data = encryptor.update(buf + (b'\x02' if last else b'\x01'))
+        else:
+            data = encryptor.update((b"\0" * pad_size) + buf)
         data += encryptor.finalize()
         data += encryptor.tag
         return data
@@ -336,27 +383,37 @@ def encrypt(content, salt=None, key=None, dh=None, auth_secret=None,
     if salt is None:
         salt = os.urandom(16)
         version = "aes128gcm"
+    if keyid is not None and keyid in keymap and isinstance(keymap[keyid], ecc.ECC):
+        private_key = keymap[keyid]
 
     (key_, nonce_) = derive_key(mode="encrypt", version=version,
                                 salt=salt, key=key,
-                                dh=dh, auth_secret=auth_secret,
+                                private_key=private_key, dh=dh,
+                                auth_secret=auth_secret,
                                 keyid=keyid, keymap=keymap, keylabels=keylabels)
+    overhead = pad_size
+    if version == 'aes128gcm':
+        overhead += 16
+        end = len(content)
+    else:
+        end = len(content) + 1
     if rs <= pad_size:
         raise ECEException(u"Record size too small")
-    chunk_size = rs - pad_size
+    chunk_size = rs - overhead
 
     result = b""
     counter = 0
 
     # the extra one on the loop ensures that we produce a padding only
     # record if the data length is an exact multiple of the chunk size
-    for i in list(range(0, len(content) + 1, chunk_size)):
+    for i in list(range(0, end, chunk_size)):
         result += encrypt_record(key_, nonce_, counter,
-                                 content[i:i + chunk_size])
+                                 content[i:i + chunk_size],
+                                 (i + chunk_size) >= end)
         counter += 1
     if version == "aes128gcm":
-        if keyid == '' and keyid in keymap:
-            kid = keymap[keyid].get_pubkey()
+        if keyid is None and private_key is not None:
+            kid = private_key.get_pubkey()
         else:
             kid = (keyid or '').encode('utf-8')
         return compose_aes128gcm(salt, result, rs, keyid=kid)
