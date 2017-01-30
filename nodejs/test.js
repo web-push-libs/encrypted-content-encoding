@@ -26,7 +26,7 @@ args.forEach(function(arg) {
   if (arg === 'verbose') {
     log = console.log.bind(console);
   } else if (arg.substring(0, 5) === 'text=') {
-    plaintext = arg.substring(5);
+    plaintext = Buffer.from(arg.substring(5), 'utf8');
   } else if (arg.substring(0, 4) === 'max=') {
     var v = parseInt(arg.substring(4), 10);
     if (!isNaN(v) && v > minLen) {
@@ -136,7 +136,6 @@ function encryptDecrypt(input, encryptParams, decryptParams, keys) {
   var decrypted = ece.decrypt(encrypted, decryptParams);
   logbuf('Decrypted', decrypted);
   assert.equal(Buffer.compare(input, decrypted), 0);
-  log('----- OK');
 
   saveDump({
     version: encryptParams.version,
@@ -183,6 +182,9 @@ function exactlyOneRecord(version) {
 }
 
 function detectTruncation(version) {
+  if (version === 'aes128gcm') {
+    return;
+  }
   var input = generateInput(2);
   var params = {
     version: version,
@@ -281,20 +283,20 @@ function useDH(version) {
 }
 
 // Use the examples from the draft as a sanity check.
-function checkExamples() {
+function checkExamples(version) {
   [
     {
       args: {
         version: 'aes128gcm',
-        key: base64.decode('6Aqf1aDH8lSxLyCpoCnAqg'),
+        key: base64.decode('yqdlZ-tYemfogSmv7Ws5PQ'),
         keyid: '',
-        salt: base64.decode('sJvlboCWzB5jr8hI_q9cOQ'),
+        salt: base64.decode('I1BsxtFttlv3u_Oo94xnmw'),
         rs: 4096
       },
       plaintext: Buffer.from('I am the walrus'),
-      ciphertext: base64.decode('sJvlboCWzB5jr8hI_q9cOQAAEAAANSmx' +
-                                'kSVa0-MiNNuF77YHSs-iwaNe_OK0qfmO' +
-                                'c7NT5WSW'),
+      ciphertext: base64.decode('I1BsxtFttlv3u_Oo94xnmwAAEAAA-NAV' +
+                                'ub2qFgBEuQKRapoZu-IxkIva3MEB1PD-' +
+                                'ly8Thjg'),
     },
     {
       args: {
@@ -302,16 +304,18 @@ function checkExamples() {
         key: base64.decode('BO3ZVPxUlnLORbVGMpbT1Q'),
         keyid: 'a1',
         salt: base64.decode('uNCkWiNYzKTnBN9ji3-qWA'),
-        rs: 26,
+        rs: 25,
         pad: 1
       },
       plaintext: Buffer.from('I am the walrus'),
-      ciphertext: base64.decode('uNCkWiNYzKTnBN9ji3-qWAAAABoCYTGH' +
-                                'OqYFz-0in3dpb-VE2GfBngkaPy6bZus_' +
-                                'qLF79s6zQyTSsA0iLOKyd3JqVIwprNzV' +
-                                'atRCWZGUx_qsFbJBCQu62RqQuR2d')
+      ciphertext: base64.decode('uNCkWiNYzKTnBN9ji3-qWAAAABkCYTHO' +
+                                'G8chz_gnvgOqdGYovxyjuqRyJFjEDyoF' +
+                                '1Fvkj6hQPdPHI51OEUKEpgz3SsLWIqS_' +
+                                'uA')
     }
-  ].forEach(function (v, i) {
+  ].filter(function(v) {
+    return v.args.version === version;
+  }).forEach(function (v, i) {
     log('decrypt ' + v.args.version + ' example ' + (i + 1));
     var decrypted = ece.decrypt(v.ciphertext, v.args);
     logbuf('decrypted', decrypted);
@@ -333,16 +337,16 @@ filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
                   detectTruncation,
                   useKeyId,
                   useDH,
+                  checkExamples,
                 ])
       .forEach(function(test) {
         log(version + ' Test: ' + test.name);
         test(version);
+        log('----- OK');
       });
   });
-checkExamples();
 
 log('All tests passed.');
-
 
 if (dumpFile) {
   require('fs').writeFileSync(dumpFile, JSON.stringify(dumpData, undefined, '  '));
