@@ -1,13 +1,15 @@
 # Major Differences Between the Various HTTP ECE Versions
 
 ## aes128gcm
-* Most current version as of 2016/11
+* Most current version as of 2017/01
 * `salt`, `rs`, and `key_id` now all contained as preamble for the encrypted content.
 * Sender's public DH key value is sent as the `dh` parameter of the `Crypto-Key` header
     * The `Encryption` header is no longer required.
 * The context string `WebPush: info\x00` + Receiver's raw public key + Sender's raw public key
 * `keyinfo` string set to `Content-Encoding: aes128gcm\x00`
 * `nonceinfo` string set to `Content-Encoding: nonce\x00`
+* padding is at the end of a record, a delimiter (2 for the last record, 1 for
+  all others) followed by any number of zeros
 
 ## aesgcm
 * `salt` contained as 'salt' parameter of the `Encryption` header
