@@ -232,10 +232,11 @@ def decrypt(content, salt=None, key=None,
     def unpad(data, last):
         i = len(data) - 1
         for i in range(len(data) - 1, -1, -1):
-            if data[i] != 0:
-                if not last and data[i] != 1:
+            x = struct.unpack('B', data[i:i+1])[0]
+            if x != 0:
+                if not last and x != 1:
                     raise ECEException(u'record delimiter != 1')
-                if last and data[i] != 2:
+                if last and x != 2:
                     raise ECEException(u'last record delimiter != 2')
                 return data[0:i]
             i -= 1
