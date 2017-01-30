@@ -151,7 +151,7 @@ class TestEceChecking(unittest.TestCase):
         self.m_input = os.urandom(5)
         # This header is specific to the padding tests, but can be used elsewhere
         self.m_header = b'\xaa\xd2\x05}3S\xb7\xff7\xbd\xe4*\xe1\xd5\x0f\xda'
-        self.m_header += struct.pack('!L', 4096) + b'\0'
+        self.m_header += struct.pack('!L', 32) + b'\0'
 
     def test_encrypt_small_rs(self):
         with assert_raises(ECEException) as ex:
@@ -159,7 +159,7 @@ class TestEceChecking(unittest.TestCase):
                 self.m_input,
                 version='aes128gcm',
                 key=self.m_key,
-                rs=2,
+                rs=1,
             )
         eq_(ex.exception.message, "Record size too small")
 
@@ -170,7 +170,7 @@ class TestEceChecking(unittest.TestCase):
                 header + self.m_input,
                 version='aes128gcm',
                 key=self.m_key,
-                rs=2,
+                rs=1,
             )
         eq_(ex.exception.message, "Record size too small")
 
@@ -214,22 +214,32 @@ class TestEceChecking(unittest.TestCase):
     def test_overlong_padding(self):
         with assert_raises(ECEException) as ex:
             ece.decrypt(
-                self.m_header + b'\xbb\xc1\xb9ev\x0b\xf0E\xd1u\x11\xac\x82\xae\x96\x96\x98{l\x13\xe2C\xf0',
+                self.m_header + b'\xbb\xc7\xb9ev\x0b\xf0f+\x93\xf4\xe5\xd6\x94\xb7e\xf0\xcd\x15\x9b(\x01\xa5',
                 version='aes128gcm',
                 key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
                 keyid=b64e(os.urandom(192)), # 256 bytes
             )
-        eq_(ex.exception.message, "Bad padding")
+        eq_(ex.exception.message, "all zero record plaintext")
 
-    def test_nonzero_padding(self):
+    def test_bad_early_delimiter(self):
         with assert_raises(ECEException) as ex:
             ece.decrypt(
-                self.m_header + b'\xbb\xc6\xb1\x1dF:~\x0f\x07+\xbe\xaaD\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0~',
+                self.m_header + b'\xb9\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08C8u\xa3\x06\xc9x\x06\n\xfc|}\xe9R\x85\x91\x8bX\x02`\xf3' + b'E8z(\xe5%f/H\xc1\xc32\x04\xb1\x95\xb5N\x9ep\xd4\x0e<\xf3\xef\x0cg\x1b\xe0\x14I~\xdc',
                 version='aes128gcm',
                 key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
                 keyid=b64e(os.urandom(192)), # 256 bytes
             )
-        eq_(ex.exception.message, "Bad padding")
+        eq_(ex.exception.message, "record delimiter != 1")
+
+    def test_bad_final_delimiter(self):
+        with assert_raises(ECEException) as ex:
+            ece.decrypt(
+                self.m_header + b'\xba\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08Ji\xe4P\x1b\x8dI\xdb\xc6y#MG\xc2W\x16',
+                version='aes128gcm',
+                key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
+                keyid=b64e(os.urandom(192)), # 256 bytes
+            )
+        eq_(ex.exception.message, "last record delimiter != 2")
 
     def test_damage(self):
         with assert_raises(ECEException) as ex:
@@ -348,12 +358,12 @@ class TestEceIntegration(unittest.TestCase):
         self.encrypt_decrypt(input, params, version=version)
 
     def detect_truncation(self, version):
+        if version == "aes128gcm":
+            return
+
         input = self._generate_input(2)
         key = os.urandom(16)
-        if version != "aes128gcm":
-            salt = os.urandom(16)
-        else:
-            salt = None
+        salt = os.urandom(16)
 
         rs = len(input) + self._rsoverhead(version) - 1
         encrypted = ece.encrypt(input, salt=salt, key=key, rs=rs,

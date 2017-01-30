@@ -22,7 +22,7 @@ TAG_LENGTH = 16
 
 # Valid content types (ordered from newest, to most obsolete)
 versions = {
-    "aes128gcm": {"pad": 2},
+    "aes128gcm": {"pad": 1},
     "aesgcm": {"pad": 2},
     "aesgcm128": {"pad": 1},
 }
@@ -217,7 +217,9 @@ def decrypt(content, salt=None, key=None,
             modes.GCM(iv(nonce, counter), tag=content[-TAG_LENGTH:]),
             backend=default_backend()
         ).decryptor()
-        data = decryptor.update(content[:-TAG_LENGTH]) + decryptor.finalize()
+        return decryptor.update(content[:-TAG_LENGTH]) + decryptor.finalize()
+
+    def unpad_legacy(data):
         pad = functools.reduce(
             lambda x, y: x << 8 | y, struct.unpack(
                 "!" + ("B" * pad_size), data[0:pad_size])
@@ -225,8 +227,19 @@ def decrypt(content, salt=None, key=None,
         if pad_size + pad > len(data) or \
            data[pad_size:pad_size+pad] != (b"\x00" * pad):
             raise ECEException(u"Bad padding")
-        data = data[pad_size + pad:]
-        return data
+        return data[pad_size + pad:]
+
+    def unpad(data, last):
+        i = len(data) - 1
+        for i in range(len(data) - 1, -1, -1):
+            if data[i] != 0:
+                if not last and data[i] != 1:
+                    raise ECEException(u'record delimiter != 1')
+                if last and data[i] != 2:
+                    raise ECEException(u'last record delimiter != 2')
+                return data[0:i]
+            i -= 1
+        raise ECEException(u'all zero record plaintext')
 
     if version not in versions:
         raise ECEException(u"Invalid version")
@@ -269,14 +282,19 @@ def decrypt(content, salt=None, key=None,
         chunk = rs + 16  # account for tags in old versions
     else:
         chunk = rs
-    if len(content) % chunk == 0:
+    if len(content) % chunk == 0 and version != 'aes128gcm':
         raise ECEException(u"Message truncated")
 
     result = b''
     counter = 0
     try:
         for i in list(range(0, len(content), chunk)):
-            result += decrypt_record(key_, nonce_, counter, content[i:i + chunk])
+            data = decrypt_record(key_, nonce_, counter, content[i:i + chunk])
+            if version == 'aes128gcm':
+                last = (i + chunk) >= len(content)
+                result += unpad(data, last)
+            else:
+                result += unpad_legacy(data)
             counter += 1
     except InvalidTag as ex:
         raise ECEException("Decryption error: {}".format(repr(ex)))
@@ -312,14 +330,17 @@ def encrypt(content, salt=None, key=None,
     :rtype str
 
     """
-    def encrypt_record(key, nonce, counter, buf):
+    def encrypt_record(key, nonce, counter, buf, last):
         encryptor = Cipher(
             algorithms.AES(key),
             modes.GCM(iv(nonce, counter)),
             backend=default_backend()
         ).encryptor()
 
-        data = encryptor.update((b"\0" * pad_size) + buf)
+        if version == 'aes128gcm':
+            data = encryptor.update(buf + (b'\x02' if last else b'\x01'))
+        else:
+            data = encryptor.update((b"\0" * pad_size) + buf)
         data += encryptor.finalize()
         data += encryptor.tag
         return data
@@ -372,6 +393,9 @@ def encrypt(content, salt=None, key=None,
     overhead = pad_size
     if version == 'aes128gcm':
         overhead += 16
+        end = len(content)
+    else:
+        end = len(content) + 1
     if rs <= pad_size:
         raise ECEException(u"Record size too small")
     chunk_size = rs - overhead
@@ -381,9 +405,10 @@ def encrypt(content, salt=None, key=None,
 
     # the extra one on the loop ensures that we produce a padding only
     # record if the data length is an exact multiple of the chunk size
-    for i in list(range(0, len(content) + 1, chunk_size)):
+    for i in list(range(0, end, chunk_size)):
         result += encrypt_record(key_, nonce_, counter,
-                                 content[i:i + chunk_size])
+                                 content[i:i + chunk_size],
+                                 (i + chunk_size) >= end)
         counter += 1
     if version == "aes128gcm":
         if keyid is None and private_key is not None:
