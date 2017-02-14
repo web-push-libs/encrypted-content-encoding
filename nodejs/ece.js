@@ -338,7 +338,7 @@ function unpad(data, last) {
         }
       } else {
         if (data[i] !== 1) {
-          throw new Error('last record needs to start padding with a 2');
+          throw new Error('record needs to start padding with a 1');
         }
       }
       return data.slice(0, i);
@@ -472,7 +472,8 @@ function writeHeader(header) {
  * If |params.key| is specified, that value is used as the key.
  *
  * If |params.keyid| is specified without |params.dh|, the keyid value is used
- * to lookup the |params.keymap| for a buffer containing the key.
+ * to lookup the |params.keymap| for a buffer containing the key.  This feature
+ * is deprecated in favour of just including |params.key| or |params.privateKey|.
  *
  * For Diffie-Hellman (WebPush), |params.dh| includes the public key of the
  * receiver.  |params.privateKey| is used to establish a shared secret.  For
