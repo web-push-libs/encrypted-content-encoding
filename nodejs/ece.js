@@ -330,7 +330,7 @@ function unpadLegacy(data, version) {
 
 function unpad(data, last) {
   var i = data.length - 1;
-  while(i > 0) {
+  while(i >= 0) {
     if (data[i]) {
       if (last) {
         if (data[i] !== 2) {
@@ -433,6 +433,10 @@ function encryptRecord(key, counter, buffer, pad, header, last) {
     keylog('padding', padding);
     ciphertext.push(gcm.update(padding));
     ciphertext.push(gcm.update(buffer));
+
+    if (!last && padding.length + buffer.length < header.rs) {
+      throw new Error('Unable to pad to record size');
+    }
   } else {
     ciphertext.push(gcm.update(buffer));
     padding.writeUIntBE(last ? 2 : 1, 0, 1);
@@ -520,6 +524,9 @@ function encrypt(buffer, params) {
     if (header.version !== 'aes128gcm') {
       recordPad = Math.min((1 << (padSize * 8)) - 1, recordPad);
     }
+    if (pad > 0 && recordPad === 0) {
+      ++recordPad; // Deal with perverse case of rs=overhead+1 with padding.
+    }
     pad -= recordPad;
 
     var end = start + header.rs - overhead - recordPad;
@@ -528,17 +535,15 @@ function encrypt(buffer, params) {
       // of a buffer.
       last = end > buffer.length;
     } else {
-      last = end >= buffer.length && pad <= 0;
+      last = end >= buffer.length;
     }
+    last = last && pad <= 0;
     var block = encryptRecord(key, counter, buffer.slice(start, end),
                               recordPad, header, last);
     result = Buffer.concat([result, block]);
 
     start = end;
     ++counter;
-  }
-  if (pad) {
-    throw new Error('Unable to pad by requested amount, ' + pad + ' remaining');
   }
   return result;
 }

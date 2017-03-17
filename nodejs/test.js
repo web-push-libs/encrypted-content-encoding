@@ -16,7 +16,7 @@ function usage() {
   console.log('  "dump[=file]" log info to ../encrypt_data.json or the specified file');
 }
 var args = process.argv.slice(2);
-var minLen = 3;
+var minLen = 1;
 var maxLen = 100;
 var plaintext;
 var dumpFile;
@@ -65,11 +65,12 @@ function logbuf(msg, buf) {
   }
 }
 
-function saveDump(data){
+function reallySaveDump(data){
   if (dumpFile && data.version) {
     dumpData.push(data);
   }
 }
+var saveDump = reallySaveDump;
 
 function validate() {
   ['hello', null, 1, NaN, [], {}].forEach(function(v) {
@@ -180,6 +181,48 @@ function exactlyOneRecord(version) {
   };
   encryptDecrypt(input, params, params);
 }
+
+// If rs only allows one octet of data in each record AND padding is requested,
+// then we need to ensure that padding is added without infinitely looping.
+function padTinyRecord(version) {
+  var input = generateInput(1);
+  var params = {
+    version: version,
+    key: base64.encode(crypto.randomBytes(16)),
+    rs: rsoverhead(version) + 1,
+    pad: 2
+  };
+  encryptDecrypt(input, params, params);
+}
+
+// The earlier versions had a limit to how much padding they could include in
+// each record, which means that they could fail to encrypt if too much padding
+// was requested with a large record size.
+function tooMuchPadding(version) {
+  if (version === 'aes128gcm') {
+    return;
+  }
+  var padSize = rsoverhead(version);
+  var rs = Math.pow(256, padSize) + padSize + 1;
+  var input = generateInput(1);
+  var params = {
+    version: version,
+    key: base64.encode(crypto.randomBytes(16)),
+    rs: rs,
+    pad: rs
+  };
+  var ok = false;
+  try {
+    ece.encrypt(input, params);
+  } catch (e) {
+    log('----- OK: ' + e);
+    ok = true;
+  }
+  if (!ok) {
+    throw new Error('Encryption succeeded, but should not have');
+  }
+}
+
 
 function detectTruncation(version) {
   if (version === 'aes128gcm') {
@@ -334,6 +377,7 @@ filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
     filterTests([ useExplicitKey,
                   authenticationSecret,
                   exactlyOneRecord,
+                  padTinyRecord,
                   detectTruncation,
                   useKeyId,
                   useDH,
@@ -341,6 +385,10 @@ filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
                 ])
       .forEach(function(test) {
         log(version + ' Test: ' + test.name);
+        saveDump = data => {
+          data.test = test.name + ' ' + version;
+          reallySaveDump(data);
+        };
         test(version);
         log('----- OK');
       });
