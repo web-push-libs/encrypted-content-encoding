@@ -18,7 +18,7 @@ setup(
     description='Encrypted Content Encoding for HTTP',
     long_description='Encipher HTTP Messages',
     classifiers=[
-        'Development Status :: 3 - Alpha',
+        'Development Status :: 4 - Beta',
         'License :: OSI Approved :: MIT License',
         'Programming Language :: Python :: 2.7',
         'Programming Language :: Python :: 3.4',
