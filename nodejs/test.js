@@ -67,7 +67,21 @@ function logbuf(msg, buf) {
 
 function reallySaveDump(data){
   if (dumpFile && data.version) {
-    dumpData.push(data);
+    function dumpFix(d) {
+      var r = {};
+      Object.keys(d).forEach(function(k) {
+        if (Buffer.isBuffer(d[k])) {
+          r[k] = base64.encode(d[k]);
+        } else if (d[k] instanceof Object) {
+          r[k] = dumpFix(d[k]);
+        } else {
+          r[k] = d[k];
+        }
+      });
+      return r;
+    }
+
+    dumpData.push(dumpFix(data));
   }
 }
 var saveDump = reallySaveDump;
@@ -128,7 +142,7 @@ function encryptDecrypt(input, encryptParams, decryptParams, keys) {
   assert.equal(encryptParams.authSecret, decryptParams.authSecret);
 
   // Always fill in the salt so we can log it.
-  decryptParams.salt = base64.encode(crypto.randomBytes(16));
+  decryptParams.salt = crypto.randomBytes(16);
   encryptParams.salt = decryptParams.salt;
   logbuf('Salt', encryptParams.salt);
 
@@ -140,11 +154,11 @@ function encryptDecrypt(input, encryptParams, decryptParams, keys) {
 
   saveDump({
     version: encryptParams.version,
-    input: base64.encode(input),
-    encrypted: base64.encode(encrypted),
+    input: input,
+    encrypted: encrypted,
     params: {
       encrypt: encryptParams,
-      decrypt: decryptParams,
+      decrypt: decryptParams
     },
     keys: keys
   });
@@ -154,7 +168,7 @@ function useExplicitKey(version) {
   var input = generateInput();
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16))
+    key: crypto.randomBytes(16)
   };
   logbuf('Key', params.key);
   encryptDecrypt(input, params, params);
@@ -164,8 +178,8 @@ function authenticationSecret(version) {
   var input = generateInput();
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16)),
-    authSecret: base64.encode(crypto.randomBytes(16))
+    key: crypto.randomBytes(16),
+    authSecret: crypto.randomBytes(16)
   };
   logbuf('Key', params.key);
   logbuf('Context', params.authSecret);
@@ -176,7 +190,7 @@ function exactlyOneRecord(version) {
   var input = generateInput(1);
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16)),
+    key: crypto.randomBytes(16),
     rs: input.length + rsoverhead(version)
   };
   encryptDecrypt(input, params, params);
@@ -188,7 +202,7 @@ function padTinyRecord(version) {
   var input = generateInput(1);
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16)),
+    key: crypto.randomBytes(16),
     rs: rsoverhead(version) + 1,
     pad: 2
   };
@@ -207,7 +221,7 @@ function tooMuchPadding(version) {
   var input = generateInput(1);
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16)),
+    key: crypto.randomBytes(16),
     rs: rs,
     pad: rs
   };
@@ -231,7 +245,7 @@ function detectTruncation(version) {
   var input = generateInput(2);
   var params = {
     version: version,
-    key: base64.encode(crypto.randomBytes(16)),
+    key: crypto.randomBytes(16),
     rs: input.length + rsoverhead(version) - 1
   };
   var headerLen = (version === 'aes128gcm') ? 21 : 0;
@@ -255,20 +269,6 @@ function detectTruncation(version) {
   }
 }
 
-function useKeyId(version) {
-  var input = generateInput();
-  var keyid = base64.encode(crypto.randomBytes(16));
-  var key = crypto.randomBytes(16);
-  var keymap = {};
-  keymap[keyid] = key;
-  var params = {
-    keyid: keyid,
-    keymap: keymap
-  };
-
-  encryptDecrypt(input, params, params);
-}
-
 function useDH(version) {
   // the static key is used by the receiver
   var staticKey = crypto.createECDH('prime256v1');
@@ -289,25 +289,20 @@ function useDH(version) {
   var input = generateInput();
   var encryptParams = {
     version: version,
-    authSecret: base64.encode(crypto.randomBytes(16)),
-    dh: base64.encode(staticKey.getPublicKey())
+    authSecret: crypto.randomBytes(16),
+    dh: staticKey.getPublicKey()
   };
   var decryptParams = {
     version: version,
     authSecret: encryptParams.authSecret
   };
-  if (version === 'aes128gcm') {
-    encryptParams.privateKey = ephemeralKey;
-    decryptParams.privateKey = staticKey;
-  } else {
-    encryptParams.keyid = 'k';
-    encryptParams.keymap = { k: ephemeralKey };
-    encryptParams.keylabels = { k: 'P-256' };
+  encryptParams.privateKey = ephemeralKey;
+  decryptParams.privateKey = staticKey;
+  if (version !== 'aes128gcm') {
+    encryptParams.keylabel = 'P-256';
 
-    decryptParams.dh = base64.encode(ephemeralKey.getPublicKey());
-    decryptParams.keyid = 'k';
-    decryptParams.keymap = { k: staticKey };
-    decryptParams.keylabels = encryptParams.keylabels;
+    decryptParams.dh = ephemeralKey.getPublicKey();
+    decryptParams.keylabel = 'P-256';
   }
 
 
@@ -379,7 +374,6 @@ filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
                   exactlyOneRecord,
                   padTinyRecord,
                   detectTruncation,
-                  useKeyId,
                   useDH,
                   checkExamples,
                 ])

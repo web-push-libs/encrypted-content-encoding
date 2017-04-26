@@ -50,38 +50,10 @@ def make_key():
 class TestEce(unittest.TestCase):
 
     def setUp(self):
-        self.keymap = {'valid': make_key()}
-        self.keylabels = {'valid': 'P-256'}
+        self.private_key = make_key()
+        self.dh = self.private_key.public_key().public_numbers().encode_point()
         self.m_key = os.urandom(16)
         self.m_salt = os.urandom(16)
-
-    def tearDown(self):
-        self.keymap = None
-        self.keylabels = None
-
-    def test_derive_key_no_keyid_dh(self):
-        with assert_raises(ECEException) as ex:
-            ece.derive_key('encrypt',
-                           version='aes128gcm',
-                           salt=self.m_salt,
-                           dh='bogus',
-                           keyid=None,
-                           keymap=self.keymap,
-                           auth_secret=None,
-                           )
-        eq_(ex.exception.message, "DH requires a private_key")
-
-    def test_derive_key_invalid_keyid_dh(self):
-        with assert_raises(ECEException) as ex:
-            ece.derive_key('encrypt',
-                           version='aesgcm',
-                           salt=self.m_salt,
-                           dh='bogus',
-                           keyid="invalid",
-                           keymap=self.keymap,
-                           auth_secret=None,
-                           )
-        eq_(ex.exception.message, "DH requires a private_key")
 
     def test_derive_key_invalid_mode(self):
         with assert_raises(ECEException) as ex:
@@ -89,9 +61,10 @@ class TestEce(unittest.TestCase):
                            version='aes128gcm',
                            salt=self.m_salt,
                            key=self.m_key,
-                           keyid="valid",
-                           keymap=self.keymap,
+                           private_key=self.private_key,
+                           dh=None,
                            auth_secret=None,
+                           keyid="valid",
                            )
         eq_(ex.exception.message, "unknown 'mode' specified: invalid")
 
@@ -101,9 +74,10 @@ class TestEce(unittest.TestCase):
                            version='aes128gcm',
                            salt=None,
                            key=self.m_key,
-                           keyid="valid",
-                           keymap=self.keymap,
+                           private_key=self.private_key,
+                           dh=None,
                            auth_secret=None,
+                           keyid="valid",
                            )
         eq_(ex.exception.message, "'salt' must be a 16 octet value")
 
@@ -112,34 +86,39 @@ class TestEce(unittest.TestCase):
             ece.derive_key('encrypt',
                            version='invalid',
                            salt=self.m_salt,
-                           keyid="valid",
-                           keymap=self.keymap,
+                           key=None,
+                           private_key=self.private_key,
+                           dh=None,
                            auth_secret=None,
+                           keyid="valid",
                            )
         eq_(ex.exception.message, "Invalid version")
 
-    def test_derive_key_no_secret(self):
-        self.keymap['valid'] = None
+    def test_derive_key_no_private_key(self):
         with assert_raises(ECEException) as ex:
             ece.derive_key('encrypt',
                            version='aes128gcm',
                            salt=self.m_salt,
-                           keyid="valid",
-                           keymap=self.keymap,
+                           key=None,
+                           private_key=None,
+                           dh=self.dh,
                            auth_secret=None,
+                           keyid="valid",
+                           )
+        eq_(ex.exception.message, "DH requires a private_key")
+
+    def test_derive_key_no_secret(self):
+        with assert_raises(ECEException) as ex:
+            ece.derive_key('encrypt',
+                           version='aes128gcm',
+                           salt=self.m_salt,
+                           key=None,
+                           private_key=None,
+                           dh=None,
+                           auth_secret=None,
+                           keyid="valid",
                            )
         eq_(ex.exception.message, "unable to determine the secret")
-
-    def test_derive_key_keyid_from_keys(self):
-        self.keymap['valid'] = os.urandom(16)
-        ece.derive_key('encrypt',
-                       version='aes128gcm',
-                       salt=self.m_salt,
-                       key=None,
-                       keyid="valid",
-                       keymap=self.keymap,
-                       auth_secret=None,
-                       )
 
     def test_iv_bad_counter(self):
         with assert_raises(ECEException) as ex:
@@ -307,7 +286,6 @@ class TestEceIntegration(unittest.TestCase):
                                 salt=salt,
                                 key=encrypt_params.get("key"),
                                 keyid=encrypt_params.get("keyid"),
-                                keymap=decrypt_params.get("keymap"),
                                 dh=encrypt_params.get("dh"),
                                 private_key=encrypt_params.get("private_key"),
                                 auth_secret=encrypt_params.get("auth_secret"),
@@ -318,7 +296,6 @@ class TestEceIntegration(unittest.TestCase):
                                 salt=salt,
                                 key=decrypt_params.get("key"),
                                 keyid=decrypt_params.get("keyid"),
-                                keymap=decrypt_params.get("keymap"),
                                 dh=decrypt_params.get("dh"),
                                 private_key=decrypt_params.get("private_key"),
                                 auth_secret=decrypt_params.get("auth_secret"),
@@ -326,18 +303,6 @@ class TestEceIntegration(unittest.TestCase):
                                 version=version)
         logbuf("Decrypted", decrypted)
         eq_(input, decrypted)
-        return dict(
-            version=version,
-            source=input,
-            salt=b64e(encrypt_params.get("salt")),
-            key=repr(encrypt_params.get(
-                "key",
-                ece.keys.get(encrypt_params.get('keyid')))),
-            dh=b64e(encrypt_params.get("dh")),
-            rs=encrypt_params.get("rs", 0),
-            auth_secret=b64e(encrypt_params.get("auth_secret")),
-            encrypted=b64e(encrypted),
-        )
 
     def use_explicit_key(self, version=None):
         params = {
@@ -379,25 +344,6 @@ class TestEceIntegration(unittest.TestCase):
             ece.decrypt(chunk, salt=salt, key=key, rs=rs, version=version)
         eq_(ex.exception.message, "Message truncated")
 
-    def use_key_id(self, version):
-        key = os.urandom(16)
-        keymap = {'k': key }
-        encrypt_params = {
-            "keyid": 'k',
-            "keymap": keymap,
-        }
-        # aes128gcm encodes the keyid
-        if version != 'aes128gcm':
-            decrypt_id = encrypt_params['keyid']
-        else:
-            decrypt_id = None
-        decrypt_params = {
-            "keyid": decrypt_id,
-            "keymap": keymap,
-        }
-        self.encrypt_decrypt(self._generate_input(), encrypt_params,
-                             decrypt_params, version=version)
-
     def use_dh(self, version):
         def pubbytes(k):
             return k.public_key().public_numbers().encode_point()
@@ -421,7 +367,6 @@ class TestEceIntegration(unittest.TestCase):
         static_key = make_key()
         is_uncompressed(static_key)
 
-
         logec("receiver", static_key)
 
         # the ephemeral key is used by the sender
@@ -439,7 +384,7 @@ class TestEceIntegration(unittest.TestCase):
 
         encrypt_params = {
             "private_key": ephemeral_key,
-            "dh": pubbytes(static_key),
+            "dh": static_key.public_key(),
             "auth_secret": auth_secret,
         }
         decrypt_params = {
@@ -459,7 +404,6 @@ class TestEceIntegration(unittest.TestCase):
                     self.auth_secret,
                     self.exactly_one_record,
                     self.detect_truncation,
-                    self.use_key_id,
                     ):
                 ece.keys = {}
                 ece.labels = {}

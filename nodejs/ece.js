@@ -20,10 +20,6 @@
 var crypto = require('crypto');
 var base64 = require('urlsafe-base64');
 
-var saved = {
-  keymap: {},
-  keylabels: {}
-};
 var AES_GCM = 'aes-128-gcm';
 var PAD_SIZE = { 'aes128gcm': 1, 'aesgcm': 2, 'aesgcm128': 1 };
 var TAG_LENGTH = 16;
@@ -102,15 +98,6 @@ function lengthPrefix(buffer) {
 
 function extractDH(header, mode) {
   var key = header.privateKey;
-  if (!key) {
-    if (!header.keymap || !header.keyid || !header.keymap[header.keyid]) {
-      throw new Error('No known DH key for ' + header.keyid);
-    }
-    key = header.keymap[header.keyid];
-  }
-  if (!header.keylabels[header.keyid]) {
-    throw new Error('No known DH key label for ' + header.keyid);
-  }
   var senderPubKey, receiverPubKey;
   if (mode === MODE_ENCRYPT) {
     senderPubKey = key.getPublicKey();
@@ -125,7 +112,7 @@ function extractDH(header, mode) {
   return {
     secret: key.computeSecret(header.dh),
     context: Buffer.concat([
-      Buffer.from(header.keylabels[header.keyid], 'ascii'),
+      Buffer.from(header.keylabel, 'ascii'),
       Buffer.from([0]),
       lengthPrefix(receiverPubKey), // user agent
       lengthPrefix(senderPubKey)    // application server
@@ -248,12 +235,8 @@ function deriveKeyAndNonce(header, mode) {
 /* Parse command-line arguments. */
 function parseParams(params) {
   var header = {};
-  if (params.version) {
-    header.version = params.version;
-  } else {
-    header.version = (params.padSize === 1) ? 'aesgcm128' : 'aesgcm';
-  }
 
+  header.version = params.version || 'aes128gcm';
   header.rs = parseInt(params.rs, 10);
   if (isNaN(header.rs)) {
     header.rs = 4096;
@@ -281,7 +264,7 @@ function parseParams(params) {
       header.keymap = params.keymap || saved.keymap;
     }
     if (header.version !== 'aes128gcm') {
-      header.keylabels = params.keylabels || saved.keylabels;
+      header.keylabel = params.keylabel || 'P-256';
     }
     if (params.dh) {
       header.dh = decode(params.dh);
@@ -362,28 +345,21 @@ function decryptRecord(key, counter, buffer, header, last) {
   return unpad(data, last);
 }
 
-// TODO: this really should use the node streams stuff
-
 /**
  * Decrypt some bytes.  This uses the parameters to determine the key and block
  * size, which are described in the draft.  Binary values are base64url encoded.
  *
  * |params.version| contains the version of encoding to use: aes128gcm is the latest,
  * but aesgcm and aesgcm128 are also accepted (though the latter two might
- * disappear in a future release).  If omitted, assume aesgcm, unless
- * |params.padSize| is set to 1, which means aesgcm128.
+ * disappear in a future release).  If omitted, assume aes128gcm.
  *
  * If |params.key| is specified, that value is used as the key.
  *
- * If |params.keyid| is specified without |params.dh|, the keyid value is used
- * to lookup the |params.keymap| for a buffer containing the key.
+ * If the version is aes128gcm, the keyid is extracted from the header and used
+ * as the ECDH public key of the sender.  For version aesgcm and aesgcm128,
+ * |params.dh| needs to be provided with the public key of the sender.
  *
- * For version aesgcm and aesgcm128, |params.dh| includes the public key of the sender.  The ECDH key
- * pair used to decrypt is looked up using |params.keymap[params.keyid]|.
- *
- * Version aes128gcm is stricter.  The |params.privateKey| includes the private
- * key of the receiver.  The keyid is extracted from the header and used as the
- * ECDH public key of the sender.
+ * The |params.privateKey| includes the private key of the receiver.
  */
 function decrypt(buffer, params) {
   var header = parseParams(params);
@@ -470,21 +446,13 @@ function writeHeader(header) {
  *
  * |params.version| contains the version of encoding to use: aes128gcm is the latest,
  * but aesgcm and aesgcm128 are also accepted (though the latter two might
- * disappear in a future release).  If omitted, assume aesgcm, unless
- * |params.padSize| is set to 1, which means aesgcm128.
+ * disappear in a future release).  If omitted, assume aes128gcm.
  *
  * If |params.key| is specified, that value is used as the key.
  *
- * If |params.keyid| is specified without |params.dh|, the keyid value is used
- * to lookup the |params.keymap| for a buffer containing the key.  This feature
- * is deprecated in favour of just including |params.key| or |params.privateKey|.
- *
  * For Diffie-Hellman (WebPush), |params.dh| includes the public key of the
- * receiver.  |params.privateKey| is used to establish a shared secret.  For
- * versions aesgcm and aesgcm128, if a private key is not provided, the ECDH key
- * pair used to encrypt is looked up using |params.keymap[params.keyid]|, and
- * |params.keymap| defaults to the values saved with saveKey().  Key pairs can
- * be created using |crypto.createECDH()|.
+ * receiver.  |params.privateKey| is used to establish a shared secret.  Key
+ * pairs can be created using |crypto.createECDH()|.
  */
 function encrypt(buffer, params) {
   if (!Buffer.isBuffer(buffer)) {
@@ -497,7 +465,7 @@ function encrypt(buffer, params) {
 
   var result;
   if (header.version === 'aes128gcm') {
-    // Save the DH public key in the header.
+    // Save the DH public key in the header unless keyid is set.
     if (header.privateKey && !header.keyid) {
       header.keyid = header.privateKey.getPublicKey();
     }
@@ -548,18 +516,7 @@ function encrypt(buffer, params) {
   return result;
 }
 
-/**
- * Deprecated.  Use the keymap and keylabels arguments to encrypt()/decrypt().
- */
-function saveKey(id, key, dhLabel) {
-  saved.keymap[id] = key;
-  if (dhLabel) {
-    saved.keylabels[id] = dhLabel;
-  }
-}
-
 module.exports = {
   decrypt: decrypt,
-  encrypt: encrypt,
-  saveKey: saveKey
+  encrypt: encrypt
 };
