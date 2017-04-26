@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
 )
-from pyelliptic import ecc
+from cryptography.hazmat.primitives.asymmetric import ec
 
 keys = {}
 labels = {}
@@ -74,12 +74,13 @@ def derive_key(mode, version, salt=None, key=None,
         def length_prefix(key):
             return struct.pack("!H", len(key)) + key
 
+        encoded = private_key.public_key().public_numbers().encode_point()
         if mode == "encrypt":
-            sender_pub_key = private_key.get_pubkey()
+            sender_pub_key = encoded
             receiver_pub_key = dh
         else:
             sender_pub_key = dh
-            receiver_pub_key = private_key.get_pubkey()
+            receiver_pub_key = encoded
 
         if version == "aes128gcm":
             context = b"WebPush: info\x00" + receiver_pub_key + sender_pub_key
@@ -87,7 +88,9 @@ def derive_key(mode, version, salt=None, key=None,
             context = (label + b"\0" + length_prefix(receiver_pub_key) +
                        length_prefix(sender_pub_key))
 
-        return private_key.get_ecdh_key(dh), context
+        numbers = ec.EllipticCurvePublicNumbers.from_encoded_point(ec.SECP256R1(), dh)
+        pubkey = numbers.public_key(default_backend())
+        return private_key.exchange(ec.ECDH(), pubkey), context
 
     if version not in versions:
         raise ECEException(u"Invalid version")
@@ -251,7 +254,8 @@ def decrypt(content, salt=None, key=None,
         keymap = keys
     if keylabels is None:
         keylabels = labels
-    if keyid is not None and keyid in keymap and isinstance(keymap[keyid], ecc.ECC):
+    if keyid is not None and keyid in keymap and \
+       isinstance(keymap[keyid], ec.EllipticCurvePrivateKey):
         private_key = keymap[keyid]
 
     if version == "aes128gcm":
@@ -318,7 +322,7 @@ def encrypt(content, salt=None, key=None,
     :type key: object
     :param keyid: Internal key identifier for private key info
     :type keyid: str
-    :param dh: Remote Diffie Hellman sequence
+    :param dh: Remote Diffie Hellman sequence (omit for aes128gcm)
     :type dh: str
     :param rs: Record size
     :type rs: int
@@ -382,7 +386,8 @@ def encrypt(content, salt=None, key=None,
     if salt is None:
         salt = os.urandom(16)
         version = "aes128gcm"
-    if keyid is not None and keyid in keymap and isinstance(keymap[keyid], ecc.ECC):
+    if keyid is not None and keyid in keymap and \
+       isinstance(keymap[keyid], ec.EllipticCurvePrivateKey):
         private_key = keymap[keyid]
 
     (key_, nonce_) = derive_key(mode="encrypt", version=version,
@@ -412,7 +417,7 @@ def encrypt(content, salt=None, key=None,
         counter += 1
     if version == "aes128gcm":
         if keyid is None and private_key is not None:
-            kid = private_key.get_pubkey()
+            kid = private_key.public_key().public_numbers().encode_point()
         else:
             kid = (keyid or '').encode('utf-8')
         return compose_aes128gcm(salt, result, rs, keyid=kid)
