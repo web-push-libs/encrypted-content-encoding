@@ -9,10 +9,7 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
 )
-from pyelliptic import ecc
-
-keys = {}
-labels = {}
+from cryptography.hazmat.primitives.asymmetric import ec
 
 MAX_RECORD_SIZE = pow(2, 31) - 1
 MIN_RECORD_SIZE = 3
@@ -27,18 +24,14 @@ versions = {
     "aesgcm128": {"pad": 1},
 }
 
-
 class ECEException(Exception):
     """Exception for ECE encryption functions"""
     def __init__(self, message):
         self.message = message
 
-# TODO: turn this into a class so that we don't grow/stomp keys.
-
-
-def derive_key(mode, version, salt=None, key=None,
-               private_key=None, dh=None, auth_secret=None,
-               keyid=None, keymap=None, keylabels=None):
+def derive_key(mode, version, salt, key,
+               private_key, dh, auth_secret,
+               keyid, keylabel="P-256"):
     """Derive the encryption key
 
     :param mode: operational mode (encrypt or decrypt)
@@ -53,10 +46,8 @@ def derive_key(mode, version, salt=None, key=None,
     :type dh: str
     :param keyid: key identifier label
     :type keyid: str
-    :param keymap: map of keyids to keys
-    :type keymap: map
-    :param keylabels: map of keyids to labels
-    :type keylabels: map
+    :param keylabel: label for aesgcm/aesgcm128
+    :type keylabel: str
     :param auth_secret: authorization secret
     :type auth_secret: str
     :param version: Content Type identifier
@@ -70,24 +61,33 @@ def derive_key(mode, version, salt=None, key=None,
     def build_info(base, info_context):
         return b"Content-Encoding: " + base + b"\0" + info_context
 
-    def derive_dh(mode, version, private_key, dh, label):
+    def derive_dh(mode, version, private_key, dh, keylabel):
         def length_prefix(key):
             return struct.pack("!H", len(key)) + key
 
+        if isinstance(dh, ec.EllipticCurvePublicKey):
+            pubkey = dh
+            dh = dh.public_numbers().encode_point()
+        else:
+            numbers = ec.EllipticCurvePublicNumbers.from_encoded_point(ec.SECP256R1(), dh)
+            pubkey = numbers.public_key(default_backend())
+
+        encoded = private_key.public_key().public_numbers().encode_point()
         if mode == "encrypt":
-            sender_pub_key = private_key.get_pubkey()
+            sender_pub_key = encoded
             receiver_pub_key = dh
         else:
             sender_pub_key = dh
-            receiver_pub_key = private_key.get_pubkey()
+            receiver_pub_key = encoded
 
         if version == "aes128gcm":
             context = b"WebPush: info\x00" + receiver_pub_key + sender_pub_key
         else:
-            context = (label + b"\0" + length_prefix(receiver_pub_key) +
+            context = (keylabel.encode('utf-8') + b"\0" +
+                       length_prefix(receiver_pub_key) +
                        length_prefix(sender_pub_key))
 
-        return private_key.get_ecdh_key(dh), context
+        return private_key.exchange(ec.ECDH(), pubkey), context
 
     if version not in versions:
         raise ECEException(u"Invalid version")
@@ -95,18 +95,12 @@ def derive_key(mode, version, salt=None, key=None,
         raise ECEException(u"unknown 'mode' specified: " + mode)
     if salt is None or len(salt) != KEY_LENGTH:
         raise ECEException(u"'salt' must be a 16 octet value")
-    if dh is not None or private_key is not None:
-        # We need a key in the keymap unless we're decrypting 'aes128gcm', where
-        # we can get the key from the keyid.
+    if dh is not None:
         if private_key is None:
             raise ECEException(u"DH requires a private_key")
-        label = keylabels.get(keyid, 'P-256').encode('utf-8')
-
         (secret, context) = derive_dh(mode=mode, version=version,
                                       private_key=private_key, dh=dh,
-                                      label=label)
-    elif keyid in keymap:
-        secret = keymap[keyid]
+                                      keylabel=keylabel)
     else:
         secret = key
 
@@ -169,8 +163,8 @@ def iv(base, counter):
 
 def decrypt(content, salt=None, key=None,
             private_key=None, dh=None, auth_secret=None,
-            keyid=None, keymap=None, keylabels=None,
-            rs=4096, version="aesgcm", **kwargs):
+            keyid=None, keylabel="P-256",
+            rs=4096, version="aes128gcm"):
     """
     Decrypt a data block
 
@@ -184,7 +178,7 @@ def decrypt(content, salt=None, key=None,
     :type key: object
     :param keyid: Internal key identifier for private key info
     :type keyid: str
-    :param dh: Remote Diffie Hellman sequence
+    :param dh: Remote Diffie Hellman sequence (omit for aes128gcm)
     :type dh: str
     :param rs: Record size
     :type rs: int
@@ -220,6 +214,7 @@ def decrypt(content, salt=None, key=None,
         return decryptor.update(content[:-TAG_LENGTH]) + decryptor.finalize()
 
     def unpad_legacy(data):
+        pad_size = versions[version]['pad']
         pad = functools.reduce(
             lambda x, y: x << 8 | y, struct.unpack(
                 "!" + ("B" * pad_size), data[0:pad_size])
@@ -244,16 +239,7 @@ def decrypt(content, salt=None, key=None,
     if version not in versions:
         raise ECEException(u"Invalid version")
 
-    # handle old, malformed args
-    pad_size = kwargs.get('padSize', versions[version]['pad'])
-    auth_secret = kwargs.get('authSecret', auth_secret)
-    if keymap is None:
-        keymap = keys
-    if keylabels is None:
-        keylabels = labels
-    if keyid is not None and keyid in keymap and isinstance(keymap[keyid], ecc.ECC):
-        private_key = keymap[keyid]
-
+    overhead = versions[version]['pad']
     if version == "aes128gcm":
         try:
             content_header = parse_content_header(content)
@@ -267,23 +253,20 @@ def decrypt(content, salt=None, key=None,
         else:
             keyid = keyid.decode('utf-8')
         content = content_header['content']
-        overhead = pad_size + 16
-    else:
-        overhead = pad_size
+        overhead += 16
 
-    (key_, nonce_) = derive_key(mode="decrypt", version=version,
+    (key_, nonce_) = derive_key("decrypt", version=version,
                                 salt=salt, key=key,
                                 private_key=private_key, dh=dh,
                                 auth_secret=auth_secret,
-                                keyid=keyid, keymap=keymap, keylabels=keylabels)
+                                keyid=keyid, keylabel=keylabel)
     if rs <= overhead:
         raise ECEException(u"Record size too small")
+    chunk = rs
     if version != "aes128gcm":
-        chunk = rs + 16  # account for tags in old versions
-    else:
-        chunk = rs
-    if len(content) % chunk == 0 and version != 'aes128gcm':
-        raise ECEException(u"Message truncated")
+        chunk += 16  # account for tags in old versions
+        if len(content) % chunk == 0:
+            raise ECEException(u"Message truncated")
 
     result = b''
     counter = 0
@@ -303,8 +286,8 @@ def decrypt(content, salt=None, key=None,
 
 def encrypt(content, salt=None, key=None,
             private_key=None, dh=None, auth_secret=None,
-            keyid=None, keymap=None, keylabels=None,
-            rs=4096, version="aesgcm", **kwargs):
+            keyid=None, keylabel="P-256",
+            rs=4096, version="aes128gcm"):
     """
     Encrypt a data block
 
@@ -340,7 +323,7 @@ def encrypt(content, salt=None, key=None,
         if version == 'aes128gcm':
             data = encryptor.update(buf + (b'\x02' if last else b'\x01'))
         else:
-            data = encryptor.update((b"\x00" * pad_size) + buf)
+            data = encryptor.update((b"\x00" * versions[version]['pad']) + buf)
         data += encryptor.finalize()
         data += encryptor.tag
         return data
@@ -372,31 +355,22 @@ def encrypt(content, salt=None, key=None,
     if version not in versions:
         raise ECEException(u"Invalid version")
 
-    # handle the older, ill formatted args.
-    pad_size = kwargs.get('padSize', versions[version]['pad'])
-    auth_secret = kwargs.get('authSecret', auth_secret)
-    if keymap is None:
-        keymap = keys
-    if keylabels is None:
-        keylabels = labels
     if salt is None:
         salt = os.urandom(16)
-        version = "aes128gcm"
-    if keyid is not None and keyid in keymap and isinstance(keymap[keyid], ecc.ECC):
-        private_key = keymap[keyid]
 
-    (key_, nonce_) = derive_key(mode="encrypt", version=version,
+    (key_, nonce_) = derive_key("encrypt", version=version,
                                 salt=salt, key=key,
                                 private_key=private_key, dh=dh,
                                 auth_secret=auth_secret,
-                                keyid=keyid, keymap=keymap, keylabels=keylabels)
-    overhead = pad_size
+                                keyid=keyid, keylabel=keylabel)
+
+    overhead = versions[version]['pad']
     if version == 'aes128gcm':
         overhead += 16
         end = len(content)
     else:
         end = len(content) + 1
-    if rs <= pad_size:
+    if rs <= overhead:
         raise ECEException(u"Record size too small")
     chunk_size = rs - overhead
 
@@ -412,7 +386,7 @@ def encrypt(content, salt=None, key=None,
         counter += 1
     if version == "aes128gcm":
         if keyid is None and private_key is not None:
-            kid = private_key.get_pubkey()
+            kid = private_key.public_key().public_numbers().encode_point()
         else:
             kid = (keyid or '').encode('utf-8')
         return compose_aes128gcm(salt, result, rs, keyid=kid)
