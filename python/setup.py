@@ -10,7 +10,7 @@ with io.open(os.path.join(here, 'README.rst'), encoding='utf8') as f:
 
 setup(
     name='http_ece',
-    version='1.0.0',
+    version='1.0.1',
     author='Martin Thomson',
     author_email='martin.thomson@gmail.com',
     scripts=[],
@@ -27,7 +27,7 @@ setup(
     ],
     keywords='crypto http',
     install_requires=[
-        'cryptography~=1.1.0',
+        'cryptography~=1.8.1',
     ],
     tests_require=[
         'nose',
