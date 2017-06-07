@@ -27,7 +27,7 @@ setup(
     ],
     keywords='crypto http',
     install_requires=[
-        'cryptography~=1.8.1',
+        'cryptography~=1.9',
     ],
     tests_require=[
         'nose',
