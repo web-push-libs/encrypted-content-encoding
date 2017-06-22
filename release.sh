@@ -19,12 +19,14 @@ sub='s/\(["'"'"']\)'"$old1"'["'"'"']/\1'"$new"'\1/'
 sed -i~ -e '/version *=/'"$sub" python/setup.py
 sed -i~ -e '/"version" *:/'"$sub" nodejs/package.json
 
-cd "$root"/python
+pushd "$root"/python
 python setup.py sdist
 twine upload dist/http_ece-"$new".tar.gz
+popd
 
-cd "$root"/nodejs
+pushd "$root"/nodejs
 npm publish
+popd
 
 git commit -m "Update version to $new" python/setup.py nodejs/package.json
-git tag v"$new"
+git tag -a v"$new" -m "Release version $new"
