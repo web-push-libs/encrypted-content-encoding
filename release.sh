@@ -30,3 +30,4 @@ popd
 
 git commit -m "Update version to $new" python/setup.py nodejs/package.json
 git tag -a v"$new" -m "Release version $new"
+git push origin v"$new"
