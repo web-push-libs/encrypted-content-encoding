@@ -261,7 +261,7 @@ function parseParams(params) {
   } else {
     header.privateKey = params.privateKey;
     if (!header.privateKey) {
-      header.keymap = params.keymap || saved.keymap;
+      header.keymap = params.keymap;
     }
     if (header.version !== 'aes128gcm') {
       header.keylabel = params.keylabel || 'P-256';
