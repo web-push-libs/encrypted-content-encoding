@@ -2,7 +2,7 @@ encrypted-content-encoding
 ==========================
 
 A simple implementation of the `HTTP encrypted
-content-encoding <https://tools.ietf.org/html/draft-nottingham-http-encryption-encoding>`_
+content-encoding <https://tools.ietf.org/html/rfc8188>`_
 
 Use
 ---
