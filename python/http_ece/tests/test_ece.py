@@ -5,6 +5,9 @@ import struct
 import unittest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.serialization import (
+    Encoding, PublicFormat
+)
 
 from nose.tools import eq_, assert_raises
 
@@ -42,6 +45,7 @@ def b64d(arg):
     if arg is None:
         return None
     return base64.urlsafe_b64decode(str(arg) + '===='[:len(arg) % 4:])
+
 
 def make_key():
     return ec.generate_private_key(ec.SECP256R1(), default_backend())
@@ -131,7 +135,8 @@ class TestEceChecking(unittest.TestCase):
     def setUp(self):
         self.m_key = os.urandom(16)
         self.m_input = os.urandom(5)
-        # This header is specific to the padding tests, but can be used elsewhere
+        # This header is specific to the padding tests, but can be used
+        # elsewhere
         self.m_header = b'\xaa\xd2\x05}3S\xb7\xff7\xbd\xe4*\xe1\xd5\x0f\xda'
         self.m_header += struct.pack('!L', 32) + b'\0'
 
@@ -189,47 +194,54 @@ class TestEceChecking(unittest.TestCase):
                 self.m_input,
                 version='aes128gcm',
                 key=self.m_key,
-                keyid=b64e(os.urandom(192)), # 256 bytes
+                keyid=b64e(os.urandom(192)),  # 256 bytes
             )
         eq_(ex.exception.message, "keyid is too long")
 
     def test_overlong_padding(self):
         with assert_raises(ECEException) as ex:
             ece.decrypt(
-                self.m_header + b'\xbb\xc7\xb9ev\x0b\xf0f+\x93\xf4\xe5\xd6\x94\xb7e\xf0\xcd\x15\x9b(\x01\xa5',
+                self.m_header + b'\xbb\xc7\xb9ev\x0b\xf0f+\x93\xf4'
+                                b'\xe5\xd6\x94\xb7e\xf0\xcd\x15\x9b(\x01\xa5',
                 version='aes128gcm',
                 key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
-                keyid=b64e(os.urandom(192)), # 256 bytes
+                keyid=b64e(os.urandom(192)),  # 256 bytes
             )
         eq_(ex.exception.message, "all zero record plaintext")
 
     def test_bad_early_delimiter(self):
         with assert_raises(ECEException) as ex:
             ece.decrypt(
-                self.m_header + b'\xb9\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08C8u\xa3\x06\xc9x\x06\n\xfc|}\xe9R\x85\x91\x8bX\x02`\xf3' + b'E8z(\xe5%f/H\xc1\xc32\x04\xb1\x95\xb5N\x9ep\xd4\x0e<\xf3\xef\x0cg\x1b\xe0\x14I~\xdc',
+                self.m_header + b'\xb9\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08C8u'
+                                b'\xa3\x06\xc9x\x06\n\xfc|}\xe9R\x85\x91'
+                                b'\x8bX\x02`\xf3' +
+                b'E8z(\xe5%f/H\xc1\xc32\x04\xb1\x95\xb5N\x9ep\xd4\x0e<\xf3'
+                b'\xef\x0cg\x1b\xe0\x14I~\xdc',
                 version='aes128gcm',
                 key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
-                keyid=b64e(os.urandom(192)), # 256 bytes
+                keyid=b64e(os.urandom(192)),  # 256 bytes
             )
         eq_(ex.exception.message, "record delimiter != 1")
 
     def test_bad_final_delimiter(self):
         with assert_raises(ECEException) as ex:
             ece.decrypt(
-                self.m_header + b'\xba\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08Ji\xe4P\x1b\x8dI\xdb\xc6y#MG\xc2W\x16',
+                self.m_header + b'\xba\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08Ji'
+                                b'\xe4P\x1b\x8dI\xdb\xc6y#MG\xc2W\x16',
                 version='aes128gcm',
                 key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
-                keyid=b64e(os.urandom(192)), # 256 bytes
+                keyid=b64e(os.urandom(192)),  # 256 bytes
             )
         eq_(ex.exception.message, "last record delimiter != 2")
 
     def test_damage(self):
         with assert_raises(ECEException) as ex:
             ece.decrypt(
-                self.m_header + b'\xbb\xc6\xb1\x1dF:~\x0f\x07+\xbe\xaaD\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0}',
+                self.m_header + b'\xbb\xc6\xb1\x1dF:~\x0f\x07+\xbe\xaaD'
+                                b'\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0}',
                 version='aes128gcm',
                 key=b'd\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r',
-                keyid=b64e(os.urandom(192)), # 256 bytes
+                keyid=b64e(os.urandom(192)),  # 256 bytes
             )
         eq_(ex.exception.message, "Decryption error: InvalidTag()")
 
@@ -246,14 +258,14 @@ class TestEceIntegration(unittest.TestCase):
 
     def _rsoverhead(self, version):
         if version == 'aesgcm128':
-            return 1;
+            return 1
         if version == 'aesgcm':
-            return 2;
-        return 18;
+            return 2
+        return 18
 
     def _generate_input(self, minLen=0):
         length = struct.unpack('!B', os.urandom(1))[0] + minLen
-        return os.urandom(length);
+        return os.urandom(length)
 
     def encrypt_decrypt(self, input, encrypt_params, decrypt_params=None,
                         version=None):
@@ -263,7 +275,7 @@ class TestEceIntegration(unittest.TestCase):
         :type length: bytearray
         :param encrypt_params: Dictionary of encryption parameters
         :type encrypt_params: dict
-        :param decrypt_params: Optional dictionary of decryption paramseters
+        :param decrypt_params: Optional dictionary of decryption parameters
         :type decrypt_params: dict
         :param version: Content-Type of the body, formulating encryption
         :type enumerate("aes128gcm", "aesgcm", "aesgcm128"):
@@ -299,7 +311,8 @@ class TestEceIntegration(unittest.TestCase):
                                 dh=decrypt_params.get("dh"),
                                 private_key=decrypt_params.get("private_key"),
                                 auth_secret=decrypt_params.get("auth_secret"),
-                                rs=decrypt_params.get("rs", decrypt_rs_default),
+                                rs=decrypt_params.get("rs",
+                                                      decrypt_rs_default),
                                 version=version)
         logbuf("Decrypted", decrypted)
         eq_(input, decrypted)
@@ -346,12 +359,17 @@ class TestEceIntegration(unittest.TestCase):
 
     def use_dh(self, version):
         def pubbytes(k):
-            return k.public_key().public_numbers().encode_point()
+            return k.public_key().public_bytes(
+                Encoding.X962,
+                PublicFormat.UncompressedPoint
+            )
 
         def privbytes(k):
             d = k.private_numbers().private_value
             b = b''
-            for i in range(0, k.private_numbers().public_numbers.curve.key_size, 32):
+            for i in range(0,
+                           k.private_numbers().public_numbers.curve.key_size,
+                           32):
                 b = struct.pack("!L", (d >> i) & 0xffffffff) + b
             return b
 
@@ -424,13 +442,13 @@ class TestNode(unittest.TestCase):
         if mode == 'encrypt':
             func = ece.encrypt
             local = 'sender'
-            remote = 'receiver'
+            # remote = 'receiver'
             inp = 'input'
             outp = 'encrypted'
         else:
             func = ece.decrypt
             local = 'receiver'
-            remote = 'sender'
+            # remote = 'sender'
             inp = 'encrypted'
             outp = 'input'
 
@@ -445,7 +463,8 @@ class TestNode(unittest.TestCase):
             if 'keys' in data:
                 key = None
                 decode_pub = ec.EllipticCurvePublicNumbers.from_encoded_point
-                pubnum = decode_pub(ec.SECP256R1(), b64d(data['keys'][local]['public']))
+                pubnum = decode_pub(ec.SECP256R1(),
+                                    b64d(data['keys'][local]['public']))
                 d = 0
                 dbin = b64d(data['keys'][local]['private'])
                 for i in range(0, len(dbin), 4):
