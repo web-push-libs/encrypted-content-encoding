@@ -442,13 +442,11 @@ class TestNode(unittest.TestCase):
         if mode == 'encrypt':
             func = ece.encrypt
             local = 'sender'
-            # remote = 'receiver'
             inp = 'input'
             outp = 'encrypted'
         else:
             func = ece.decrypt
             local = 'receiver'
-            # remote = 'sender'
             inp = 'encrypted'
             outp = 'input'
 
