@@ -9,6 +9,9 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
 )
+from cryptography.hazmat.primitives.serialization import (
+    Encoding, PublicFormat
+)
 from cryptography.hazmat.primitives.asymmetric import ec
 
 MAX_RECORD_SIZE = pow(2, 31) - 1
@@ -24,10 +27,12 @@ versions = {
     "aesgcm128": {"pad": 1},
 }
 
+
 class ECEException(Exception):
     """Exception for ECE encryption functions"""
     def __init__(self, message):
         self.message = message
+
 
 def derive_key(mode, version, salt, key,
                private_key, dh, auth_secret,
@@ -64,15 +69,20 @@ def derive_key(mode, version, salt, key,
     def derive_dh(mode, version, private_key, dh, keylabel):
         def length_prefix(key):
             return struct.pack("!H", len(key)) + key
-
         if isinstance(dh, ec.EllipticCurvePublicKey):
             pubkey = dh
-            dh = dh.public_numbers().encode_point()
+            dh = dh.public_bytes(
+                Encoding.X962,
+                PublicFormat.UncompressedPoint)
         else:
-            numbers = ec.EllipticCurvePublicNumbers.from_encoded_point(ec.SECP256R1(), dh)
-            pubkey = numbers.public_key(default_backend())
+            pubkey = ec.EllipticCurvePublicKey.from_encoded_point(
+                ec.SECP256R1(),
+                dh
+            )
 
-        encoded = private_key.public_key().public_numbers().encode_point()
+        encoded = private_key.public_key().public_bytes(
+            Encoding.X962,
+            PublicFormat.UncompressedPoint)
         if mode == "encrypt":
             sender_pub_key = encoded
             receiver_pub_key = dh
@@ -243,7 +253,7 @@ def decrypt(content, salt=None, key=None,
     if version == "aes128gcm":
         try:
             content_header = parse_content_header(content)
-        except:
+        except Exception:
             raise ECEException("Could not parse the content header")
         salt = content_header['salt']
         rs = content_header['rs']
@@ -386,7 +396,9 @@ def encrypt(content, salt=None, key=None,
         counter += 1
     if version == "aes128gcm":
         if keyid is None and private_key is not None:
-            kid = private_key.public_key().public_numbers().encode_point()
+            kid = private_key.public_key().public_bytes(
+                Encoding.X962,
+                PublicFormat.UncompressedPoint)
         else:
             kid = (keyid or '').encode('utf-8')
         return compose_aes128gcm(salt, result, rs, keyid=kid)
