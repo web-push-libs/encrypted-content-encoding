@@ -366,6 +366,36 @@ function checkExamples(version) {
   });
 }
 
+function useCustomCallback(version) {
+  const customCallback = (keyId) => {
+    let keys = [
+      {
+        keyId: '123456',
+        key: '1928375791029'
+      },
+      {
+        keyId: '999',
+        key: '9999999999'
+      }
+    ]
+    return keys.find(x => { return x.keyId === keyId.toString() }).key
+  }
+
+  let input = generateInput()
+  var parameters = {
+    keyid: '123456',
+  };
+  log('Testing custom function')
+
+  var encrypted = ece.encrypt(input, parameters, customCallback);
+  logbuf('encrypted', encrypted)
+
+  var decrypted = ece.decrypt(encrypted, parameters, customCallback);
+  logbuf('decrypted', decrypted)
+
+  assert.equal(Buffer.compare(decrypted, input), 0)
+}
+
 validate();
 filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
   .forEach(function(version) {
@@ -376,6 +406,7 @@ filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
                   detectTruncation,
                   useDH,
                   checkExamples,
+                  useCustomCallback
                 ])
       .forEach(function(test) {
         log(version + ' Test: ' + test.name);
