@@ -176,7 +176,13 @@ function webpushSecret(header, mode) {
                      SHA_256_LENGTH));
 }
 
-function extractSecret(header, mode) {
+function extractSecret(header, mode, keyLookupCallback) {
+  if (keyLookupCallback) {
+    if (!isFunction(keyLookupCallback)) {
+      throw new Error('Callback is not a function')
+    }
+  }
+
   if (header.key) {
     if (header.key.length !== KEY_LENGTH) {
       throw new Error('An explicit key must be ' + KEY_LENGTH + ' bytes');
@@ -186,7 +192,11 @@ function extractSecret(header, mode) {
 
   if (!header.privateKey) {
     // Lookup based on keyid
-    var key = header.keymap && header.keymap[header.keyid];
+    if (!keyLookupCallback) {
+      var key = header.keymap && header.keymap[header.keyid];
+    } else {
+      var key = keyLookupCallback(header.keyid)
+    }
     if (!key) {
       throw new Error('No saved key (keyid: "' + header.keyid + '")');
     }
@@ -196,7 +206,7 @@ function extractSecret(header, mode) {
   return webpushSecret(header, mode);
 }
 
-function deriveKeyAndNonce(header, mode) {
+function deriveKeyAndNonce(header, mode, lookupKeyCallback) {
   if (!header.salt) {
     throw new Error('must include a salt parameter for ' + header.version);
   }
@@ -207,10 +217,10 @@ function deriveKeyAndNonce(header, mode) {
     // really old
     keyInfo = 'Content-Encoding: aesgcm128';
     nonceInfo = 'Content-Encoding: nonce';
-    secret = extractSecretAndContext(header, mode).secret;
+    secret = extractSecretAndContext(header, mode, lookupKeyCallback).secret;
   } else if (header.version === 'aesgcm') {
     // old
-    var s = extractSecretAndContext(header, mode);
+    var s = extractSecretAndContext(header, mode, lookupKeyCallback);
     keyInfo = info('aesgcm', s.context);
     nonceInfo = info('nonce', s.context);
     secret = s.secret;
@@ -218,7 +228,7 @@ function deriveKeyAndNonce(header, mode) {
     // latest
     keyInfo = Buffer.from('Content-Encoding: aes128gcm\0');
     nonceInfo = Buffer.from('Content-Encoding: nonce\0');
-    secret = extractSecret(header, mode);
+    secret = extractSecret(header, mode, lookupKeyCallback);
   } else {
     throw new Error('Unable to set context for mode ' + params.version);
   }
@@ -361,13 +371,13 @@ function decryptRecord(key, counter, buffer, header, last) {
  *
  * The |params.privateKey| includes the private key of the receiver.
  */
-function decrypt(buffer, params) {
+function decrypt(buffer, params, keyLookupCallback) {
   var header = parseParams(params);
   if (header.version === 'aes128gcm') {
     var headerLength = readHeader(buffer, header);
     buffer = buffer.slice(headerLength);
   }
-  var key = deriveKeyAndNonce(header, MODE_DECRYPT);
+  var key = deriveKeyAndNonce(header, MODE_DECRYPT, keyLookupCallback);
   var start = 0;
   var result = new Buffer(0);
 
@@ -454,7 +464,7 @@ function writeHeader(header) {
  * receiver.  |params.privateKey| is used to establish a shared secret.  Key
  * pairs can be created using |crypto.createECDH()|.
  */
-function encrypt(buffer, params) {
+function encrypt(buffer, params, keyLookupCallback) {  
   if (!Buffer.isBuffer(buffer)) {
     throw new Error('buffer argument must be a Buffer');
   }
@@ -475,7 +485,7 @@ function encrypt(buffer, params) {
     result = new Buffer(0);
   }
 
-  var key = deriveKeyAndNonce(header, MODE_ENCRYPT);
+  var key = deriveKeyAndNonce(header, MODE_ENCRYPT, keyLookupCallback);
   var start = 0;
   var padSize = PAD_SIZE[header.version];
   var overhead = padSize;
@@ -515,6 +525,11 @@ function encrypt(buffer, params) {
   }
   return result;
 }
+
+
+function isFunction(object) {
+  return typeof(object) === 'function';
+ }
 
 module.exports = {
   decrypt: decrypt,
