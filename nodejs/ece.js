@@ -12,16 +12,13 @@
  *
  * aesgcm: The version that is widely deployed with WebPush (as of 2016-11).
  *    This version is selected by default, unless you specify a |padSize| of 1.
- *
- * aesgcm128: This version is old and will be removed in an upcoming release.
- *     This version is selected by providing a |padSize| parameter of 1.
  */
 
 var crypto = require('crypto');
 var base64 = require('urlsafe-base64');
 
 var AES_GCM = 'aes-128-gcm';
-var PAD_SIZE = { 'aes128gcm': 1, 'aesgcm': 2, 'aesgcm128': 1 };
+var PAD_SIZE = { 'aes128gcm': 1, 'aesgcm': 2 };
 var TAG_LENGTH = 16;
 var KEY_LENGTH = 16;
 var NONCE_LENGTH = 12;
@@ -213,12 +210,7 @@ function deriveKeyAndNonce(header, mode, lookupKeyCallback) {
   var keyInfo;
   var nonceInfo;
   var secret;
-  if (header.version === 'aesgcm128') {
-    // really old
-    keyInfo = 'Content-Encoding: aesgcm128';
-    nonceInfo = 'Content-Encoding: nonce';
-    secret = extractSecretAndContext(header, mode, lookupKeyCallback).secret;
-  } else if (header.version === 'aesgcm') {
+  if (header.version === 'aesgcm') {
     // old
     var s = extractSecretAndContext(header, mode, lookupKeyCallback);
     keyInfo = info('aesgcm', s.context);
@@ -360,13 +352,13 @@ function decryptRecord(key, counter, buffer, header, last) {
  * size, which are described in the draft.  Binary values are base64url encoded.
  *
  * |params.version| contains the version of encoding to use: aes128gcm is the latest,
- * but aesgcm and aesgcm128 are also accepted (though the latter two might
+ * but aesgcm is also accepted (though the latter might
  * disappear in a future release).  If omitted, assume aes128gcm.
  *
  * If |params.key| is specified, that value is used as the key.
  *
  * If the version is aes128gcm, the keyid is extracted from the header and used
- * as the ECDH public key of the sender.  For version aesgcm and aesgcm128,
+ * as the ECDH public key of the sender.  For version aesgcm ,
  * |params.dh| needs to be provided with the public key of the sender.
  *
  * The |params.privateKey| includes the private key of the receiver.
@@ -455,7 +447,7 @@ function writeHeader(header) {
  * size, which are described in the draft.
  *
  * |params.version| contains the version of encoding to use: aes128gcm is the latest,
- * but aesgcm and aesgcm128 are also accepted (though the latter two might
+ * but aesgcm is also accepted (though the latter two might
  * disappear in a future release).  If omitted, assume aes128gcm.
  *
  * If |params.key| is specified, that value is used as the key.
