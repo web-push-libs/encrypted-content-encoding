@@ -31,9 +31,7 @@ setup(
     ],
     tests_require=[
         'nose',
-        'mock',
         'coverage',
-        'flake8',
     ],
     test_suite="nose.collector",
     url='https://github.com/martinthomson/encrypted-content-encoding',
