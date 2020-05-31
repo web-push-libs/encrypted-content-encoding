@@ -8,7 +8,7 @@ var assert = require('assert');
 function usage() {
   console.log('Usage: node test.js [args]');
   console.log('  <version> - test only the specified version(s)');
-  console.log('    Supported: [aes128gcm,aesgcm,aesgcm128]');
+  console.log('    Supported: [aes128gcm,aesgcm]');
   console.log('  <test function> - test only the specified function(s)');
   console.log('  "verbose" enable logging for tests (export ECE_KEYLOG=1 for more)');
   console.log('  "text=..." sets the input string');
@@ -116,9 +116,6 @@ function generateInput(min) {
 }
 
 function rsoverhead(version) {
-  if (version === 'aesgcm128') {
-    return 1;
-  }
   if (version === 'aesgcm') {
     return 2;
   }
@@ -397,7 +394,7 @@ function useCustomCallback(version) {
 }
 
 validate();
-filterTests([ 'aesgcm128', 'aesgcm', 'aes128gcm' ])
+filterTests([ 'aesgcm', 'aes128gcm' ])
   .forEach(function(version) {
     filterTests([ useExplicitKey,
                   authenticationSecret,
