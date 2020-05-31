@@ -222,7 +222,7 @@ function deriveKeyAndNonce(header, mode, lookupKeyCallback) {
     nonceInfo = Buffer.from('Content-Encoding: nonce\0');
     secret = extractSecret(header, mode, lookupKeyCallback);
   } else {
-    throw new Error('Unable to set context for mode ' + params.version);
+    throw new Error('Unable to set context for mode ' + header.version);
   }
   var prk = HKDF_extract(header.salt, secret);
   var result = {
