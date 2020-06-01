@@ -7,11 +7,11 @@ on:
   push:
     branches: [ master ]
     paths:
-      - 'nodejs/*'
+      - 'nodejs/**'
   pull_request:
     branches: [ master ]
     paths:
-      - 'nodejs/*'
+      - 'nodejs/**'
 
 jobs:
   build:
