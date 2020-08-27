@@ -28,4 +28,4 @@ jobs:
       uses: actions/setup-node@v1
       with:
         node-version: ${{ matrix.node-version }}
-    - run: node test.js dump verbose
+    - run: node nodejs/test.js dump verbose
