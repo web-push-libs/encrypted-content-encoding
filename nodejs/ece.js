@@ -60,11 +60,11 @@ function HKDF_extract(salt, ikm) {
 function HKDF_expand(prk, info, l) {
   keylog('prk', prk);
   keylog('info', info);
-  var output = new Buffer(0);
-  var T = new Buffer(0);
-  info = new Buffer(info, 'ascii');
+  var output = Buffer.alloc(0);
+  var T = Buffer.alloc(0);
+  info = Buffer.from(info, 'ascii');
   var counter = 0;
-  var cbuf = new Buffer(1);
+  var cbuf = Buffer.alloc(1);
   while (output.length < l) {
     cbuf.writeUIntBE(++counter, 0, 1);
     T = HMAC_hash(prk, Buffer.concat([T, info, cbuf]));
@@ -80,7 +80,7 @@ function HKDF(salt, ikm, info, len) {
 
 function info(base, context) {
   var result = Buffer.concat([
-    new Buffer('Content-Encoding: ' + base + '\0', 'ascii'),
+    Buffer.from('Content-Encoding: ' + base + '\0', 'ascii'),
     context
   ]);
   keylog('info ' + base, result);
@@ -88,7 +88,7 @@ function info(base, context) {
 }
 
 function lengthPrefix(buffer) {
-  var b = Buffer.concat([new Buffer(2), buffer]);
+  var b = Buffer.concat([Buffer.alloc(2), buffer]);
   b.writeUIntBE(buffer.length, 0, 2);
   return b;
 }
@@ -118,7 +118,7 @@ function extractDH(header, mode) {
 }
 
 function extractSecretAndContext(header, mode) {
-  var result = { secret: null, context: new Buffer(0) };
+  var result = { secret: null, context: Buffer.alloc(0) };
   if (header.key) {
     result.secret = header.key;
     if (result.secret.length !== KEY_LENGTH) {
@@ -136,7 +136,7 @@ function extractSecretAndContext(header, mode) {
   keylog('context', result.context);
   if (header.authSecret) {
     result.secret = HKDF(header.authSecret, result.secret,
-                         info('auth', new Buffer(0)), SHA_256_LENGTH);
+                         info('auth', Buffer.alloc(0)), SHA_256_LENGTH);
     keylog('authsecret', result.secret);
   }
   return result;
@@ -279,7 +279,7 @@ function parseParams(params) {
 }
 
 function generateNonce(base, counter) {
-  var nonce = new Buffer(base);
+  var nonce = Buffer.from(base);
   var m = nonce.readUIntBE(nonce.length - 6, 6);
   var x = ((m ^ counter) & 0xffffff) +
       ((((m / 0x1000000) ^ (counter / 0x1000000)) & 0xffffff) * 0x1000000);
@@ -305,7 +305,7 @@ function unpadLegacy(data, version) {
     throw new Error('padding exceeds block size');
   }
   keylog('padding', data.slice(0, padSize + pad));
-  var padCheck = new Buffer(pad);
+  var padCheck = Buffer.alloc(pad);
   padCheck.fill(0);
   if (padCheck.compare(data.slice(padSize, padSize + pad)) !== 0) {
     throw new Error('invalid padding');
@@ -371,7 +371,7 @@ function decrypt(buffer, params, keyLookupCallback) {
   }
   var key = deriveKeyAndNonce(header, MODE_DECRYPT, keyLookupCallback);
   var start = 0;
-  var result = new Buffer(0);
+  var result = Buffer.alloc(0);
 
   var chunkSize = header.rs;
   if (header.version !== 'aes128gcm') {
@@ -403,7 +403,7 @@ function encryptRecord(key, counter, buffer, pad, header, last) {
 
   var ciphertext = [];
   var padSize = PAD_SIZE[header.version];
-  var padding = new Buffer(pad + padSize);
+  var padding = Buffer.alloc(pad + padSize);
   padding.fill(0);
 
   if (header.version !== 'aes128gcm') {
@@ -432,7 +432,7 @@ function encryptRecord(key, counter, buffer, pad, header, last) {
 }
 
 function writeHeader(header) {
-  var ints = new Buffer(5);
+  var ints = Buffer.alloc(5);
   var keyid = Buffer.from(header.keyid || []);
   if (keyid.length > 255) {
     throw new Error('keyid is too large');
@@ -474,7 +474,7 @@ function encrypt(buffer, params, keyLookupCallback) {
     result = writeHeader(header);
   } else {
     // No header on other versions
-    result = new Buffer(0);
+    result = Buffer.alloc(0);
   }
 
   var key = deriveKeyAndNonce(header, MODE_ENCRYPT, keyLookupCallback);
