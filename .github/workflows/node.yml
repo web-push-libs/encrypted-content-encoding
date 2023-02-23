@@ -29,5 +29,5 @@ jobs:
       uses: actions/setup-node@v1
       with:
         node-version: ${{ matrix.node-version }}
-    - run: npm install
-    - run: node nodejs/test.js dump verbose
+    - run: cd nodejs; npm install
+    - run: cd nodejs; node test.js dump verbose
