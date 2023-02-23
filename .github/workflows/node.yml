@@ -8,6 +8,7 @@ on:
     branches: [ master ]
     paths:
       - 'nodejs/**'
+      - .github/workflows/node.yml
   pull_request:
     branches: [ master ]
     paths:
@@ -20,7 +21,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [10.x, 12.x, 14.x, 16.x, 18.x]
+        node-version: [12, 14, 16, 18]
 
     steps:
     - uses: actions/checkout@v2

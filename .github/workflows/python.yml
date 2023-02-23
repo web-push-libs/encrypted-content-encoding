@@ -8,6 +8,7 @@ on:
     branches: [ master ]
     paths:
       - 'python/**'
+      - .github/workflows/python.yml
   pull_request:
     branches: [ master ]
     paths:
