@@ -1,6 +1,5 @@
 'use strict';
 
-var base64 = require('urlsafe-base64');
 var crypto = require('crypto');
 var ece = require('./ece.js');
 
@@ -16,8 +15,8 @@ var receiver = crypto.createECDH('prime256v1');
 // 2. it barfs when you try to access the public key, even after you set it
 // This hack squelches the complaints at the cost of a few wasted cycles
 receiver.generateKeys();
-receiver.setPublicKey(base64.decode(process.argv[4]));
-receiver.setPrivateKey(base64.decode(process.argv[3]));
+receiver.setPublicKey(Buffer.from(process.argv[4], 'base64url'));
+receiver.setPrivateKey(Buffer.from(process.argv[3], 'base64url'));
 var keymap = {};
 
 var params = {
@@ -35,7 +34,7 @@ if (process.argv.length > 7) {
 keymap[params.keyid] = receiver;
 
 console.log("Params: " + JSON.stringify(params, null, 2));
-var result = ece.decrypt(base64.decode(process.argv[5]), params);
+var result = ece.decrypt(Buffer.from(process.argv[5], 'base64url'), params);
 
-console.log(base64.encode(result));
+console.log(result.toString('base64url'));
 console.log(result.toString('utf-8'));

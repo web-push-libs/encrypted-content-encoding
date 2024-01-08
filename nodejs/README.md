@@ -8,11 +8,10 @@ content-encoding](https://tools.ietf.org/html/rfc8188)
 ```js
 var ece = require('http_ece');
 var crypto = require('crypto')
-var base64 = require('base64url');
 
 var parameters = {
-  key: base64.encode(crypto.randomBytes(16)),
-  salt: base64.encode(crypto.randomBytes(16))
+  key: crypto.randomBytes(16).toString('base64url'),
+  salt: crypto.randomBytes(16).toString('base64url')
 };
 var encrypted = ece.encrypt(data, parameters);
 

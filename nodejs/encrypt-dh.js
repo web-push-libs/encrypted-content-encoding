@@ -1,6 +1,5 @@
 'use strict';
 
-var base64 = require('urlsafe-base64');
 var crypto = require('crypto');
 var ece = require('./ece.js');
 
@@ -27,18 +26,18 @@ if (process.argv.length > 5) {
 var sender = crypto.createECDH('prime256v1');
 sender.generateKeys();
 if (params.senderPrivate) {
-  sender.setPrivateKey(base64.decode(params.senderPrivate));
+  sender.setPrivateKey(Buffer.from(params.senderPrivate, 'base64url'));
 } else {
-  params.senderPrivate = base64.encode(sender.getPrivateKey());
+  params.senderPrivate = sender.getPrivateKey().toString('base64url');
 }
 if (params.senderPublic) {
-  sender.setPublicKey(base64.decode(params.senderPublic));
+  sender.setPublicKey(Buffer.from(params.senderPublic, 'base64url'));
 } else {
-  params.senderPublic = base64.encode(sender.getPublicKey());
+  params.senderPublic = sender.getPublicKey().toString('base64url');
 }
 params.privateKey = sender;
 
 console.log("Params: " + JSON.stringify(params, null, 2));
-var result = ece.encrypt(base64.decode(process.argv[4]), params);
+var result = ece.encrypt(Buffer.from(process.argv[4], 'base64url'), params);
 
-console.log("Encrypted Message: " + base64.encode(result));
+console.log("Encrypted Message: " + result.toString('base64url'));
