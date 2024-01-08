@@ -22,7 +22,7 @@
     "test": "node ./test.js"
   },
   "engines": {
-    "node": ">=4"
+    "node": ">=16"
   },
   "dependencies": {
     "urlsafe-base64": "~1.0.0"
