@@ -2,7 +2,6 @@
 
 var crypto = require('crypto');
 var ece = require('./ece.js');
-var base64 = require('urlsafe-base64');
 var assert = require('assert');
 
 function usage() {
@@ -57,11 +56,11 @@ function filterTests(fullList) {
 
 function logbuf(msg, buf) {
   if (typeof buf === 'string') {
-    buf = base64.decode(buf);
+    buf = Buffer.from(buf, 'base64url');
   }
   log(msg + ': [' + buf.length + ']');
   for (var i = 0; i < buf.length; i += 48) {
-    log('    ' + base64.encode(buf.slice(i, i + 48)));
+    log('    ' + buf.slice(i, i + 48).toString('base64url'));
   }
 }
 
@@ -71,7 +70,7 @@ function reallySaveDump(data){
       var r = {};
       Object.keys(d).forEach(function(k) {
         if (Buffer.isBuffer(d[k])) {
-          r[k] = base64.encode(d[k]);
+          r[k] = d[k].toString('base64url');
         } else if (d[k] instanceof Object) {
           r[k] = dumpFix(d[k]);
         } else {
@@ -306,12 +305,12 @@ function useDH(version) {
   // keyData is used for cross library verification dumps
   var keyData = {
     sender: {
-      private: base64.encode(ephemeralKey.getPrivateKey()),
-      public: base64.encode(ephemeralKey.getPublicKey())
+      private: ephemeralKey.getPrivateKey().toString('base64url'),
+      public: ephemeralKey.getPublicKey().toString('base64url')
     },
     receiver: {
-      private: base64.encode(staticKey.getPrivateKey()),
-      public: base64.encode(staticKey.getPublicKey())
+      private: staticKey.getPrivateKey().toString('base64url'),
+      public: staticKey.getPublicKey().toString('base64url')
     }
   };
   encryptDecrypt(input, encryptParams, decryptParams, keyData);
@@ -323,30 +322,30 @@ function checkExamples(version) {
     {
       args: {
         version: 'aes128gcm',
-        key: base64.decode('yqdlZ-tYemfogSmv7Ws5PQ'),
+        key: Buffer.from('yqdlZ-tYemfogSmv7Ws5PQ', 'base64url'),
         keyid: '',
-        salt: base64.decode('I1BsxtFttlv3u_Oo94xnmw'),
+        salt: Buffer.from('I1BsxtFttlv3u_Oo94xnmw', 'base64url'),
         rs: 4096
       },
       plaintext: Buffer.from('I am the walrus'),
-      ciphertext: base64.decode('I1BsxtFttlv3u_Oo94xnmwAAEAAA-NAV' +
+      ciphertext: Buffer.from('I1BsxtFttlv3u_Oo94xnmwAAEAAA-NAV' +
                                 'ub2qFgBEuQKRapoZu-IxkIva3MEB1PD-' +
-                                'ly8Thjg'),
+                                'ly8Thjg', 'base64url'),
     },
     {
       args: {
         version: 'aes128gcm',
-        key: base64.decode('BO3ZVPxUlnLORbVGMpbT1Q'),
+        key: Buffer.from('BO3ZVPxUlnLORbVGMpbT1Q', 'base64url'),
         keyid: 'a1',
-        salt: base64.decode('uNCkWiNYzKTnBN9ji3-qWA'),
+        salt: Buffer.from('uNCkWiNYzKTnBN9ji3-qWA', 'base64url'),
         rs: 25,
         pad: 1
       },
       plaintext: Buffer.from('I am the walrus'),
-      ciphertext: base64.decode('uNCkWiNYzKTnBN9ji3-qWAAAABkCYTHO' +
+      ciphertext: Buffer.from('uNCkWiNYzKTnBN9ji3-qWAAAABkCYTHO' +
                                 'G8chz_gnvgOqdGYovxyjuqRyJFjEDyoF' +
                                 '1Fvkj6hQPdPHI51OEUKEpgz3SsLWIqS_' +
-                                'uA')
+                                'uA', 'base64url')
     }
   ].filter(function(v) {
     return v.args.version === version;

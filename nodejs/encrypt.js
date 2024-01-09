@@ -1,6 +1,5 @@
 'use strict';
 
-var base64 = require('urlsafe-base64');
 var crypto = require('crypto');
 var ece = require('./ece.js');
 
@@ -23,6 +22,6 @@ if (process.argv.length > 4) {
 }
 
 console.log("Params: " + JSON.stringify(params, null, 2));
-var result = ece.encrypt(base64.decode(process.argv[3]), params);
+var result = ece.encrypt(Buffer.from(process.argv[3], 'base64url'), params);
 
-console.log("Encrypted Message: " + base64.encode(result));
+console.log("Encrypted Message: " + result.toString('base64url'));

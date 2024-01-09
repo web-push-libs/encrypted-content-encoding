@@ -15,7 +15,6 @@
  */
 
 var crypto = require('crypto');
-var base64 = require('urlsafe-base64');
 
 var AES_GCM = 'aes-128-gcm';
 var PAD_SIZE = { 'aes128gcm': 1, 'aesgcm': 2 };
@@ -29,7 +28,7 @@ var MODE_DECRYPT = 'decrypt';
 var keylog;
 if (process.env.ECE_KEYLOG === '1') {
   keylog = function(m, k) {
-    console.warn(m + ' [' + k.length + ']: ' + base64.encode(k));
+    console.warn(m + ' [' + k.length + ']: ' + k.toString('base64url'));
     return k;
   };
 } else {
@@ -39,7 +38,7 @@ if (process.env.ECE_KEYLOG === '1') {
 /* Optionally base64 decode something. */
 function decode(b) {
   if (typeof b === 'string') {
-    return base64.decode(b);
+    return Buffer.from(b, 'base64url');
   }
   return b;
 }
