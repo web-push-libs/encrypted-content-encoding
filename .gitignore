@@ -10,3 +10,4 @@ node_modules
 .coverage
 
 /encrypt_data.json
+/venv/
