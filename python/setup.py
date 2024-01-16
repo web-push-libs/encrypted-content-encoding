@@ -10,7 +10,7 @@ with io.open(os.path.join(here, "README.rst"), encoding="utf8") as f:
 
 setup(
     name="http_ece",
-    version="1.1.0",
+    version="1.2.0",
     author="Martin Thomson",
     author_email="martin.thomson@gmail.com",
     scripts=[],
