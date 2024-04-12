@@ -38,7 +38,7 @@ if (process.env.ECE_KEYLOG === '1') {
 /* Optionally base64 decode something. */
 function decode(b) {
   if (typeof b === 'string') {
-    return Buffer.from(b, 'base64url');
+    return Buffer.from(b, 'base64');
   }
   return b;
 }
