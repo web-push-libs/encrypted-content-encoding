@@ -322,7 +322,7 @@ function unpad(data, last) {
         }
       } else {
         if (data[i] !== 1) {
-          throw new Error('last record needs to start padding with a 2');
+          throw new Error('records other than the last need to start padding with a 1');
         }
       }
       return data.slice(0, i);
@@ -455,7 +455,7 @@ function writeHeader(header) {
  * receiver.  |params.privateKey| is used to establish a shared secret.  Key
  * pairs can be created using |crypto.createECDH()|.
  */
-function encrypt(buffer, params, keyLookupCallback) {  
+function encrypt(buffer, params, keyLookupCallback) {
   if (!Buffer.isBuffer(buffer)) {
     throw new Error('buffer argument must be a Buffer');
   }
