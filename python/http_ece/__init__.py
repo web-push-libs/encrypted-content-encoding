@@ -5,10 +5,10 @@ import struct
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
 MAX_RECORD_SIZE = pow(2, 31) - 1
 MIN_RECORD_SIZE = 3
@@ -304,7 +304,7 @@ def decrypt(
                 result += unpad_legacy(data)
             counter += 1
     except InvalidTag as ex:
-        raise ECEException("Decryption error: {}".format(repr(ex)))
+        raise ECEException(f"Decryption error: {ex!r}")
     return result
 
 

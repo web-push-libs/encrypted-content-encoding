@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "http_ece"
+version = "1.2.1"
+license = "MIT"
+authors = [
+    { name = "Martin Thomson", email = "martin.thomson@gmail.com" }
+]
+keywords = ["crypto http"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+description = "Encrypted Content Encoding for HTTP"
+readme = { file = "README.rst", content-type = "text/x-rst" }
+requires-python = ">=3.10"
+dependencies = [
+    "cryptography>=45.0.1"
+]
+
+[project.optional-dependencies]
+dev = [
+    "black==25.12.0",
+    "pytest",
+    "pytest-cov",
+    "ruff==0.14.10",
+    "tox",
+    "tox-gh",
+]
+
+[project.urls]
+Repository = "https://github.com/web-push-libs/encrypted-content-encoding"
+
+[tool.distutils.bdist_wheel]
+universal = 1
+
+[tool.coverage.report]
+show_missing = true
+
+[tool.pytest.ini_options]
+addopts = "--verbose --cov=http_ece"
+log_format = "%(asctime)s,%(msecs)03d %(name)s: %(levelname)s: %(message)s"
+log_file_date_format = "%H:%M:%S"
+
+[tool.ruff]
+lint.select = [
+    "A",
+    "F",
+    "FURB",
+    "I",
+    "PERF",
+    "PT",
+    "PTH",
+    "RUF",
+    "S",
+    "UP",
+]
+[tool.ruff.lint.extend-per-file-ignores]
+"**/tests/**" = [
+    "A001",
+    "A002",
+    "S101",
+]

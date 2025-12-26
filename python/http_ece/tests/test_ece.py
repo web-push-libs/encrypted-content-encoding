@@ -3,17 +3,17 @@ import json
 import os
 import struct
 import unittest
+from pathlib import Path
+
+import pytest
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
 
-from pytest import raises
-
 import http_ece as ece
 from http_ece import ECEException
 
-
-TEST_VECTORS = os.path.join(os.sep, "..", "encrypt_data.json")[1:]
+TEST_VECTORS = Path(__file__).parent.parent / "encrypt_data.json"
 
 
 def logmsg(arg):
@@ -59,7 +59,7 @@ class TestEce(unittest.TestCase):
         self.m_salt = os.urandom(16)
 
     def test_derive_key_invalid_mode(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="unknown 'mode' specified: invalid"):
             ece.derive_key(
                 "invalid",
                 version="aes128gcm",
@@ -70,10 +70,9 @@ class TestEce(unittest.TestCase):
                 auth_secret=None,
                 keyid="valid",
             )
-        assert ex.value.message == "unknown 'mode' specified: invalid"
 
     def test_derive_key_invalid_salt(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="'salt' must be a 16 octet value"):
             ece.derive_key(
                 "encrypt",
                 version="aes128gcm",
@@ -84,10 +83,9 @@ class TestEce(unittest.TestCase):
                 auth_secret=None,
                 keyid="valid",
             )
-        assert ex.value.message == "'salt' must be a 16 octet value"
 
     def test_derive_key_invalid_version(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Invalid version"):
             ece.derive_key(
                 "encrypt",
                 version="invalid",
@@ -98,10 +96,9 @@ class TestEce(unittest.TestCase):
                 auth_secret=None,
                 keyid="valid",
             )
-        assert ex.value.message == "Invalid version"
 
     def test_derive_key_no_private_key(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="DH requires a private_key"):
             ece.derive_key(
                 "encrypt",
                 version="aes128gcm",
@@ -112,10 +109,9 @@ class TestEce(unittest.TestCase):
                 auth_secret=None,
                 keyid="valid",
             )
-        assert ex.value.message == "DH requires a private_key"
 
     def test_derive_key_no_secret(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="unable to determine the secret"):
             ece.derive_key(
                 "encrypt",
                 version="aes128gcm",
@@ -126,12 +122,10 @@ class TestEce(unittest.TestCase):
                 auth_secret=None,
                 keyid="valid",
             )
-        assert ex.value.message == "unable to determine the secret"
 
     def test_iv_bad_counter(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Counter too big"):
             ece.iv(os.urandom(8), pow(2, 64) + 1)
-        assert ex.value.message == "Counter too big"
 
 
 class TestEceChecking(unittest.TestCase):
@@ -144,65 +138,59 @@ class TestEceChecking(unittest.TestCase):
         self.m_header += struct.pack("!L", 32) + b"\0"
 
     def test_encrypt_small_rs(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Record size too small"):
             ece.encrypt(
                 self.m_input,
                 version="aes128gcm",
                 key=self.m_key,
                 rs=1,
             )
-        assert ex.value.message == "Record size too small"
 
     def test_decrypt_small_rs(self):
         header = os.urandom(16) + struct.pack("!L", 2) + b"\0"
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Record size too small"):
             ece.decrypt(
                 header + self.m_input,
                 version="aes128gcm",
                 key=self.m_key,
                 rs=1,
             )
-        assert ex.value.message == "Record size too small"
 
     def test_encrypt_bad_version(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Invalid version"):
             ece.encrypt(
                 self.m_input,
                 version="bogus",
                 key=self.m_key,
             )
-        assert ex.value.message == "Invalid version"
 
     def test_decrypt_bad_version(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Invalid version"):
             ece.decrypt(
                 self.m_input,
                 version="bogus",
                 key=self.m_key,
             )
-        assert ex.value.message == "Invalid version"
 
     def test_decrypt_bad_header(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Could not parse the content header"):
             ece.decrypt(
                 os.urandom(4),
                 version="aes128gcm",
                 key=self.m_key,
             )
-        assert ex.value.message == "Could not parse the content header"
 
     def test_encrypt_long_keyid(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="keyid is too long"):
             ece.encrypt(
                 self.m_input,
                 version="aes128gcm",
                 key=self.m_key,
                 keyid=b64e(os.urandom(192)),  # 256 bytes
             )
-        assert ex.value.message == "keyid is too long"
 
     def test_overlong_padding(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="all zero record plaintext"):
             ece.decrypt(
                 self.m_header + b"\xbb\xc7\xb9ev\x0b\xf0f+\x93\xf4"
                 b"\xe5\xd6\x94\xb7e\xf0\xcd\x15\x9b(\x01\xa5",
@@ -210,10 +198,9 @@ class TestEceChecking(unittest.TestCase):
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
                 keyid=b64e(os.urandom(192)),  # 256 bytes
             )
-        assert ex.value.message == "all zero record plaintext"
 
     def test_bad_early_delimiter(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="record delimiter != 1"):
             ece.decrypt(
                 self.m_header + b"\xb9\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08C8u"
                 b"\xa3\x06\xc9x\x06\n\xfc|}\xe9R\x85\x91"
@@ -224,10 +211,9 @@ class TestEceChecking(unittest.TestCase):
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
                 keyid=b64e(os.urandom(192)),  # 256 bytes
             )
-        assert ex.value.message == "record delimiter != 1"
 
     def test_bad_final_delimiter(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="last record delimiter != 2"):
             ece.decrypt(
                 self.m_header + b"\xba\xc7\xb9ev\x0b\xf0\x9eB\xb1\x08Ji"
                 b"\xe4P\x1b\x8dI\xdb\xc6y#MG\xc2W\x16",
@@ -235,10 +221,9 @@ class TestEceChecking(unittest.TestCase):
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
                 keyid=b64e(os.urandom(192)),  # 256 bytes
             )
-        assert ex.value.message == "last record delimiter != 2"
 
     def test_damage(self):
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match=r"Decryption error: InvalidTag()"):
             ece.decrypt(
                 self.m_header + b"\xbb\xc6\xb1\x1dF:~\x0f\x07+\xbe\xaaD"
                 b"\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0}",
@@ -246,7 +231,6 @@ class TestEceChecking(unittest.TestCase):
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
                 keyid=b64e(os.urandom(192)),  # 256 bytes
             )
-        assert ex.value.message == "Decryption error: InvalidTag()"
 
 
 class TestEceIntegration(unittest.TestCase):
@@ -350,9 +334,8 @@ class TestEceIntegration(unittest.TestCase):
             chunk = encrypted[0 : 21 + rs]
         else:
             chunk = encrypted[0 : rs + 16]
-        with raises(ECEException) as ex:
+        with pytest.raises(ECEException, match="Message truncated"):
             ece.decrypt(chunk, salt=salt, key=key, rs=rs, version=version)
-        assert ex.value.message == "Message truncated"
 
     def use_dh(self, version):
         def pubbytes(k):
@@ -427,9 +410,9 @@ class TestNode(unittest.TestCase):
     """Testing using data from the node.js version."""
 
     def setUp(self):
-        if not os.path.exists(TEST_VECTORS):
-            self.skipTest("No %s file found" % TEST_VECTORS)
-        f = open(TEST_VECTORS, "r")
+        if not Path(TEST_VECTORS).exists():
+            self.skipTest(f"No {TEST_VECTORS} file found")
+        f = Path(TEST_VECTORS).open()
         self.legacy_data = json.loads(f.read())
         f.close()
 
@@ -446,7 +429,7 @@ class TestNode(unittest.TestCase):
             outp = "input"
 
         for data in self.legacy_data:
-            logmsg("%s: %s" % (mode, data["test"]))
+            logmsg("{}: {}".format(mode, data["test"]))
             p = data["params"][mode]
 
             if "pad" in p and mode == "encrypt":

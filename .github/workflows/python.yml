@@ -40,11 +40,13 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install black tox tox-gh
-          cd python && pip install -r requirements.txt
+          cd python && pip install .[dev]
       - name: Run tests
         run: cd python && tox
         env:
           TOX_GH_MAJOR_MINOR: ${{ matrix.python-version }}
+      - uses: astral-sh/ruff-action@v3
+        with:
+          src: "./python"
       - name: Check formatting
         run: cd python && black --check .
