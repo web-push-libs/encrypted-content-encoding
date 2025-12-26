@@ -1,0 +1,12 @@
+# https://docs.github.com/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"  # Only update GitHub Actions used in workflows
+    directory: "/"
+    schedule:
+      interval: "quarterly"
+    groups:
+      github-actions-all:  # include all actions in a single PR
+        patterns:
+          - "*"
