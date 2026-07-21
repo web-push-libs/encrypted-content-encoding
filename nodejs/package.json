@@ -19,9 +19,10 @@
   "license": "MIT",
   "main": "./ece.js",
   "scripts": {
-    "test": "node ./test.js"
+    "test": "node ./test.js",
+    "test:verbose": "node ./test.js dump verbose"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=20"
   }
 }
