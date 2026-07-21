@@ -104,7 +104,7 @@ def derive_key(
     if dh is not None:
         if private_key is None:
             raise ECEException("DH requires a private_key")
-        (secret, context) = derive_dh(
+        secret, context = derive_dh(
             mode=mode,
             version=version,
             private_key=private_key,
@@ -273,7 +273,7 @@ def decrypt(
         content = content_header["content"]
         overhead += 16
 
-    (key_, nonce_) = derive_key(
+    key_, nonce_ = derive_key(
         "decrypt",
         version=version,
         salt=salt,
@@ -391,7 +391,7 @@ def encrypt(
     if salt is None:
         salt = os.urandom(16)
 
-    (key_, nonce_) = derive_key(
+    key_, nonce_ = derive_key(
         "encrypt",
         version=version,
         salt=salt,
