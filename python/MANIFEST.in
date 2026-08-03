@@ -2,3 +2,5 @@ include README.rst
 include LICENSE
 include tox.ini
 recursive-include http_ece/tests *
+global-exclude */__pycache__/*
+
