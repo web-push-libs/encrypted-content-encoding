@@ -6,9 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "http_ece"
 version = "1.2.1"
 license = "MIT"
-authors = [
-    { name = "Martin Thomson", email = "martin.thomson@gmail.com" }
-]
+authors = [{ name = "Martin Thomson", email = "martin.thomson@gmail.com" }]
 keywords = ["crypto http"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -21,13 +19,11 @@ classifiers = [
 description = "Encrypted Content Encoding for HTTP"
 readme = { file = "README.rst", content-type = "text/x-rst" }
 requires-python = ">=3.10"
-dependencies = [
-    "cryptography>=45.0.1"
-]
+dependencies = ["cryptography>=46.0.1"]
 
 [project.optional-dependencies]
 dev = [
-    "black==25.12.0",
+    "black>=26.3.1",
     "pytest",
     "pytest-cov",
     "ruff==0.14.10",
@@ -50,21 +46,9 @@ log_format = "%(asctime)s,%(msecs)03d %(name)s: %(levelname)s: %(message)s"
 log_file_date_format = "%H:%M:%S"
 
 [tool.ruff]
-lint.select = [
-    "A",
-    "F",
-    "FURB",
-    "I",
-    "PERF",
-    "PT",
-    "PTH",
-    "RUF",
-    "S",
-    "UP",
-]
+lint.select = ["A", "F", "FURB", "I", "PERF", "PT", "PTH", "RUF", "S", "UP"]
 [tool.ruff.lint.extend-per-file-ignores]
-"**/tests/**" = [
-    "A001",
-    "A002",
-    "S101",
-]
+"**/tests/**" = ["A001", "A002", "S101"]
+
+[tool.setuptools]
+packages = ["http_ece"]

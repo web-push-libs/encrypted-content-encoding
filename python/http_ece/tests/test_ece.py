@@ -428,8 +428,8 @@ class TestNode(unittest.TestCase):
             inp = "encrypted"
             outp = "input"
 
-        for data in self.legacy_data:
-            logmsg("{}: {}".format(mode, data["test"]))
+        for version, data in self.legacy_data.items():
+            logmsg("{}: {}".format(mode, data.get("test")))
             p = data["params"][mode]
 
             if "pad" in p and mode == "encrypt":
@@ -438,8 +438,10 @@ class TestNode(unittest.TestCase):
 
             if "keys" in data:
                 key = None
-                decode_pub = ec.EllipticCurvePublicNumbers.from_encoded_point
-                pubnum = decode_pub(ec.SECP256R1(), b64d(data["keys"][local]["public"]))
+                decode_pub = ec.EllipticCurvePublicKey.from_encoded_point
+                pubnum = decode_pub(
+                    ec.SECP256R1(), b64d(data["keys"][local]["public"])
+                ).public_numbers()
                 d = 0
                 dbin = b64d(data["keys"][local]["private"])
                 for i in range(0, len(dbin), 4):
@@ -468,7 +470,7 @@ class TestNode(unittest.TestCase):
                 keyid=p.get("keyid"),
                 private_key=private_key,
                 rs=p.get("rs", 4096),
-                version=p["version"],
+                version=p.get("version") or version,
             )
             assert b64d(data[outp]) == result
 
