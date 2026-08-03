@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "http_ece"
-version = "1.2.1"
+version = "1.3.0"
 license = "MIT"
 authors = [{ name = "Martin Thomson", email = "martin.thomson@gmail.com" }]
 keywords = ["crypto http"]
