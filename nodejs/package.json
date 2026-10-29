@@ -8,22 +8,37 @@
     "name": "Martin Thomson",
     "email": "martin.thomson@gmail.com"
   },
-  "contributors": [{
-    "name": "Marco Castelluccio",
-    "email": "mcastelluccio@mozilla.com"
-  }],
+  "contributors": [
+    {
+      "name": "Marco Castelluccio",
+      "email": "mcastelluccio@mozilla.com"
+    }
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/martinthomson/encrypted-content-encoding.git"
   },
   "license": "MIT",
   "main": "./ece.js",
+  "types": "./types/ece.d.ts",
+  "exports": {
+    ".": {
+      "types": "./types/ece.d.ts",
+      "default": "./ece.js"
+    }
+  },
   "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
     "test": "node ./test.js",
     "test:verbose": "node ./test.js dump verbose"
   },
   "engines": {
     "node": ">=20"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "typescript": "^7.0.2"
+  }
 }

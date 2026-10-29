@@ -3,3 +3,6 @@ decrypt-dh.js
 encrypt.js
 encrypt-dh.js
 test.js
+types/*
+!types/ece.d.ts
+tsconfig.json

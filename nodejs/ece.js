@@ -24,6 +24,25 @@ const SHA_256_LENGTH = 32;
 const MODE_ENCRYPT = 'encrypt';
 const MODE_DECRYPT = 'decrypt';
 
+/**
+ * @typedef {Object} Params
+ * @property {('aes128gcm'|'aesgcm')=} version
+ * @property {(number|string)=} rs
+ * @property {(string|Buffer)=} salt
+ * @property {(string|Buffer)=} keyid
+ * @property {(string|Buffer)=} key
+ * @property {crypto.ECDH=} privateKey
+ * @property {Object<string, Buffer>=} keymap
+ * @property {string=} keylabel
+ * @property {(string|Buffer)=} dh
+ * @property {(string|Buffer)=} authSecret
+ * @property {(number|string)=} pad Only used when encrypting.
+ */
+
+/**
+ * @typedef {(keyid: (string|Buffer)) => Buffer} KeyLookupCallback
+ */
+
 let keylog;
 if (process.env.ECE_KEYLOG === '1') {
   keylog = function(m, k) {
@@ -358,6 +377,11 @@ function decryptRecord(key, counter, buffer, header, last) {
  * |params.dh| needs to be provided with the public key of the sender.
  *
  * The |params.privateKey| includes the private key of the receiver.
+ *
+ * @param {Buffer} buffer
+ * @param {Params} params
+ * @param {KeyLookupCallback=} keyLookupCallback
+ * @return {Buffer}
  */
 function decrypt(buffer, params, keyLookupCallback) {
   const header = parseParams(params);
@@ -451,6 +475,11 @@ function writeHeader(header) {
  * For Diffie-Hellman (WebPush), |params.dh| includes the public key of the
  * receiver.  |params.privateKey| is used to establish a shared secret.  Key
  * pairs can be created using |crypto.createECDH()|.
+ *
+ * @param {Buffer} buffer
+ * @param {Params} params
+ * @param {KeyLookupCallback=} keyLookupCallback
+ * @return {Buffer}
  */
 function encrypt(buffer, params, keyLookupCallback) {
   if (!Buffer.isBuffer(buffer)) {

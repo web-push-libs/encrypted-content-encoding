@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "outDir": "./types",
+    "rootDir": "./",
+    "emitDeclarationOnly": true,
+    "module": "node18",
+    "types": ["node"],
+    "allowJs": true,
+    "sourceMap": false,
+    "declaration": true,
+    "declarationMap": false,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strict": true,
+    "isolatedModules": true,
+    "noUncheckedSideEffectImports": true,
+    "erasableSyntaxOnly": true,
+    "skipLibCheck": true
+  },
+  "include": ["*.js"]
+}
