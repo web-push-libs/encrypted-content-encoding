@@ -1,8 +1,7 @@
-'use strict';
-
-var crypto = require('crypto');
-var ece = require('./ece.js');
-var assert = require('assert');
+import assert from 'node:assert';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import * as ece from './ece.js';
 
 function usage() {
   console.log('Usage: node test.js [args]');
@@ -14,20 +13,20 @@ function usage() {
   console.log('  "max=<n>" sets the maximum input size');
   console.log('  "dump[=file]" log info to ../encrypt_data.json or the specified file');
 }
-var args = process.argv.slice(2);
-var minLen = 1;
-var maxLen = 100;
-var plaintext;
-var dumpFile;
-var dumpData = [];
-var log = function() {};
+const args = process.argv.slice(2);
+const minLen = 1;
+let maxLen = 100;
+let plaintext;
+let dumpFile;
+const dumpData = [];
+let log = function() {};
 args.forEach(function(arg) {
   if (arg === 'verbose') {
     log = console.log.bind(console);
   } else if (arg.substring(0, 5) === 'text=') {
     plaintext = Buffer.from(arg.substring(5), 'utf8');
   } else if (arg.substring(0, 4) === 'max=') {
-    var v = parseInt(arg.substring(4), 10);
+    const v = parseInt(arg.substring(4), 10);
     if (!isNaN(v) && v > minLen) {
       maxLen = v;
     }
@@ -42,9 +41,9 @@ args.forEach(function(arg) {
 });
 
 function filterTests(fullList) {
-  var filtered = fullList.filter(function(t) {
+  const filtered = fullList.filter(function(t) {
     return args.some(function(f) {
-      var v = typeof t === 'function' ? t.name : t;
+      let v = typeof t === 'function' ? t.name : t;
       return f === v;
     });
   });
@@ -59,7 +58,7 @@ function logbuf(msg, buf) {
     buf = Buffer.from(buf, 'base64url');
   }
   log(msg + ': [' + buf.length + ']');
-  for (var i = 0; i < buf.length; i += 48) {
+  for (let i = 0; i < buf.length; i += 48) {
     log('    ' + buf.slice(i, i + 48).toString('base64url'));
   }
 }
@@ -67,7 +66,7 @@ function logbuf(msg, buf) {
 function reallySaveDump(data){
   if (dumpFile && data.version) {
     function dumpFix(d) {
-      var r = {};
+      const r = {};
       Object.keys(d).forEach(function(k) {
         if (Buffer.isBuffer(d[k])) {
           r[k] = d[k].toString('base64url');
@@ -83,7 +82,7 @@ function reallySaveDump(data){
     dumpData.push(dumpFix(data));
   }
 }
-var saveDump = reallySaveDump;
+let saveDump = reallySaveDump;
 
 function validate() {
   ['hello', null, 1, NaN, [], {}].forEach(function(v) {
@@ -99,7 +98,7 @@ function validate() {
 }
 
 function generateInput(min) {
-  var input;
+  let input;
   min = Math.max(minLen, min || 0);
   if (plaintext) {
     if (plaintext.length < min) {
@@ -107,7 +106,7 @@ function generateInput(min) {
     }
     input = plaintext;
   } else {
-    var len = Math.floor((Math.random() * (maxLen - min) + min));
+    const len = Math.floor((Math.random() * (maxLen - min) + min));
     input = crypto.randomBytes(len);
   }
   logbuf('Input', input);
@@ -142,9 +141,9 @@ function encryptDecrypt(input, encryptParams, decryptParams, keys) {
   encryptParams.salt = decryptParams.salt;
   logbuf('Salt', encryptParams.salt);
 
-  var encrypted = ece.encrypt(input, encryptParams);
+  let encrypted = ece.encrypt(input, encryptParams);
   logbuf('Encrypted', encrypted);
-  var decrypted = ece.decrypt(encrypted, decryptParams);
+  const decrypted = ece.decrypt(encrypted, decryptParams);
   logbuf('Decrypted', decrypted);
   assert.equal(Buffer.compare(input, decrypted), 0);
 
@@ -161,8 +160,8 @@ function encryptDecrypt(input, encryptParams, decryptParams, keys) {
 }
 
 function useExplicitKey(version) {
-  var input = generateInput();
-  var params = {
+  let input = generateInput();
+  const params = {
     version: version,
     key: crypto.randomBytes(16)
   };
@@ -171,8 +170,8 @@ function useExplicitKey(version) {
 }
 
 function authenticationSecret(version) {
-  var input = generateInput();
-  var params = {
+  let input = generateInput();
+  const params = {
     version: version,
     key: crypto.randomBytes(16),
     authSecret: crypto.randomBytes(16)
@@ -183,8 +182,8 @@ function authenticationSecret(version) {
 }
 
 function exactlyOneRecord(version) {
-  var input = generateInput(1);
-  var params = {
+  let input = generateInput(1);
+  const params = {
     version: version,
     key: crypto.randomBytes(16),
     rs: input.length + rsoverhead(version)
@@ -195,8 +194,8 @@ function exactlyOneRecord(version) {
 // If rs only allows one octet of data in each record AND padding is requested,
 // then we need to ensure that padding is added without infinitely looping.
 function padTinyRecord(version) {
-  var input = generateInput(1);
-  var params = {
+  let input = generateInput(1);
+  const params = {
     version: version,
     key: crypto.randomBytes(16),
     rs: rsoverhead(version) + 1,
@@ -212,16 +211,16 @@ function tooMuchPadding(version) {
   if (version === 'aes128gcm') {
     return;
   }
-  var padSize = rsoverhead(version);
-  var rs = Math.pow(256, padSize) + padSize + 1;
-  var input = generateInput(1);
-  var params = {
+  const padSize = rsoverhead(version);
+  const rs = Math.pow(256, padSize) + padSize + 1;
+  let input = generateInput(1);
+  const params = {
     version: version,
     key: crypto.randomBytes(16),
     rs: rs,
     pad: rs
   };
-  var ok = false;
+  let ok = false;
   try {
     ece.encrypt(input, params);
   } catch (e) {
@@ -238,22 +237,22 @@ function detectTruncation(version) {
   if (version === 'aes128gcm') {
     return;
   }
-  var input = generateInput(2);
-  var params = {
+  let input = generateInput(2);
+  const params = {
     version: version,
     key: crypto.randomBytes(16),
     rs: input.length + rsoverhead(version) - 1
   };
-  var headerLen = (version === 'aes128gcm') ? 21 : 0;
-  var encrypted = ece.encrypt(input, params);
-  var chunkLen = headerLen + params.rs;
+  const headerLen = (version === 'aes128gcm') ? 21 : 0;
+  let encrypted = ece.encrypt(input, params);
+  let chunkLen = headerLen + params.rs;
   if (version != 'aes128gcm') {
     chunkLen += 16;
   }
   assert.ok(chunkLen < encrypted.length);
   encrypted = encrypted.slice(0, chunkLen);
   logbuf('Encrypted', encrypted);
-  var ok = false;
+  let ok = false;
   try {
     ece.decrypt(encrypted, params);
   } catch (e) {
@@ -267,7 +266,7 @@ function detectTruncation(version) {
 
 function useDH(version) {
   // the static key is used by the receiver
-  var staticKey = crypto.createECDH('prime256v1');
+  const staticKey = crypto.createECDH('prime256v1');
   staticKey.generateKeys();
   assert.equal(staticKey.getPublicKey()[0], 4, 'is an uncompressed point');
 
@@ -275,20 +274,20 @@ function useDH(version) {
   logbuf('Receiver public', staticKey.getPublicKey());
 
   // the ephemeral key is used by the sender
-  var ephemeralKey = crypto.createECDH('prime256v1');
+  const ephemeralKey = crypto.createECDH('prime256v1');
   ephemeralKey.generateKeys();
   assert.equal(ephemeralKey.getPublicKey()[0], 4, 'is an uncompressed point');
 
   logbuf('Sender private', ephemeralKey.getPrivateKey());
   logbuf('Sender public', ephemeralKey.getPublicKey());
 
-  var input = generateInput();
-  var encryptParams = {
+  let input = generateInput();
+  const encryptParams = {
     version: version,
     authSecret: crypto.randomBytes(16),
     dh: staticKey.getPublicKey()
   };
-  var decryptParams = {
+  const decryptParams = {
     version: version,
     authSecret: encryptParams.authSecret
   };
@@ -303,7 +302,7 @@ function useDH(version) {
 
 
   // keyData is used for cross library verification dumps
-  var keyData = {
+  const keyData = {
     sender: {
       private: ephemeralKey.getPrivateKey().toString('base64url'),
       public: ephemeralKey.getPublicKey().toString('base64url')
@@ -351,12 +350,12 @@ function checkExamples(version) {
     return v.args.version === version;
   }).forEach(function (v, i) {
     log('decrypt ' + v.args.version + ' example ' + (i + 1));
-    var decrypted = ece.decrypt(v.ciphertext, v.args);
+    const decrypted = ece.decrypt(v.ciphertext, v.args);
     logbuf('decrypted', decrypted);
     assert.equal(Buffer.compare(v.plaintext, decrypted), 0);
 
     log('encrypt ' + v.args.version + ' example ' + (i + 1));
-    var encrypted = ece.encrypt(v.plaintext, v.args);
+    let encrypted = ece.encrypt(v.plaintext, v.args);
     logbuf('encrypted', encrypted);
     assert.equal(Buffer.compare(v.ciphertext, encrypted), 0);
   });
@@ -378,15 +377,15 @@ function useCustomCallback(version) {
   }
 
   let input = generateInput()
-  var parameters = {
+  const parameters = {
     keyid: '123456',
   };
   log('Testing custom function')
 
-  var encrypted = ece.encrypt(input, parameters, customCallback);
+  let encrypted = ece.encrypt(input, parameters, customCallback);
   logbuf('encrypted', encrypted)
 
-  var decrypted = ece.decrypt(encrypted, parameters, customCallback);
+  const decrypted = ece.decrypt(encrypted, parameters, customCallback);
   logbuf('decrypted', decrypted)
 
   assert.equal(Buffer.compare(decrypted, input), 0)
@@ -418,5 +417,5 @@ filterTests([ 'aesgcm', 'aes128gcm' ])
 log('All tests passed.');
 
 if (dumpFile) {
-  require('fs').writeFileSync(dumpFile, JSON.stringify(dumpData, undefined, '  '));
+  fs.writeFileSync(dumpFile, JSON.stringify(dumpData, undefined, '  '));
 }

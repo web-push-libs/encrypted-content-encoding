@@ -1,7 +1,5 @@
-'use strict';
-
-var crypto = require('crypto');
-var ece = require('./ece.js');
+import crypto from 'node:crypto';
+import * as ece from './ece.js';
 
 if (process.argv.length < 4) {
   console.warn('Usage: ' + process.argv.slice(0, 2).join(' ') +
@@ -9,19 +7,19 @@ if (process.argv.length < 4) {
   process.exit(2);
 }
 
-var params = {
+const params = {
   version: 'aes128gcm',
   key: process.argv[2]
 };
 
 if (process.argv.length > 4) {
-  var extra = JSON.parse(process.argv[4]);
+  const extra = JSON.parse(process.argv[4]);
   Object.keys(extra).forEach(function(k) {
     params[k] = extra[k];
   });
 }
 
 console.log("Params: " + JSON.stringify(params, null, 2));
-var result = ece.encrypt(Buffer.from(process.argv[3], 'base64url'), params);
+const result = ece.encrypt(Buffer.from(process.argv[3], 'base64url'), params);
 
 console.log("Encrypted Message: " + result.toString('base64url'));
