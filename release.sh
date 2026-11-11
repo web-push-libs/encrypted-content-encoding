@@ -59,20 +59,31 @@ fi
 echo "Releasing $new (pushing to remote '$remote')"
 
 if [[ "$1" == "+" ]]; then
+    # Undo the version bump if anything fails before publishing starts,
+    # so the release can be retried from a clean tree.
+    trap 'git checkout -- "$python_metadata" "$node_metadata" nodejs/package-lock.json' EXIT
     sub='s/\(["'"'"']\)'"$old1"'["'"'"']/\1'"$new"'\1/'
     sed -i -e '/^version *=/'"$sub" "$python_metadata"
     sed -i -e '/"version" *:/'"$sub" "$node_metadata"
     (cd nodejs && npm install --package-lock-only --ignore-scripts >/dev/null)
 fi
 
-pushd "$root"/python
-pybuild --sdist --wheel
-twine upload dist/http_ece-"$new".tar.gz dist/http_ece-"$new"-*.whl
+# Build and validate both packages before publishing either of them.
+pushd "$root"/nodejs
+npm ci
+npm test
+npm pack --dry-run  # "prepack" builds the TypeScript declarations
 popd
 
-pushd "$root"/nodejs
-npm publish
+pushd "$root"/python
+rm -rf dist build
+pybuild --sdist --wheel
+twine check dist/*
 popd
+
+trap - EXIT
+twine upload python/dist/http_ece-"$new".tar.gz python/dist/http_ece-"$new"-*.whl
+(cd nodejs && npm publish)
 
 if [[ "$1" == "+" ]]; then
     git commit -m "Update version to $new" "$python_metadata" "$node_metadata" nodejs/package-lock.json
