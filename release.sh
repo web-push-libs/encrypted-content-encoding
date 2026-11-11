@@ -32,8 +32,17 @@ case "$1" in
         exit 2
 esac
 
+# Run Python tools through uvx when available, so they don't need to be installed.
+if command -v uvx >/dev/null; then
+    pybuild() { uvx --from build pyproject-build "$@"; }
+    twine() { uvx twine "$@"; }
+else
+    pybuild() { python3 -m build "$@"; }
+    twine() { python3 -m twine "$@"; }
+fi
+
 pushd "$root"/python
-python -m build --sdist --wheel
+pybuild --sdist --wheel
 twine upload dist/http_ece-"$new".tar.gz dist/http_ece-"$new"-*.whl
 popd
 
