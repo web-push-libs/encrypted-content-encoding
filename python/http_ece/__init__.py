@@ -1,6 +1,6 @@
 import functools
-import os
 import struct
+from secrets import token_bytes
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.backends import default_backend
@@ -389,7 +389,7 @@ def encrypt(
         raise ECEException("Invalid version")
 
     if salt is None:
-        salt = os.urandom(16)
+        salt = token_bytes(16)
 
     key_, nonce_ = derive_key(
         "encrypt",
