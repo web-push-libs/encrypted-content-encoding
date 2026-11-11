@@ -5,6 +5,10 @@ set -e
 root=$(cd $(dirname "$0"); pwd -P)
 cd "$root"
 python_metadata=python/pyproject.toml
+
+# Push to the canonical repository, not a personal fork.
+remote=${RELEASE_REMOTE:-$(git remote -v | awk '/web-push-libs\/encrypted-content-encoding/ { print $1; exit }')}
+remote=${remote:-origin}
 sub='{ s/^.*["'"'"']\([0-9]*\.[0-9]*\.[0-9]*\)["'"'"'].*$/\1/;p; }'
 old1=$(sed -n -e '/version *=/'"$sub"'' "$python_metadata")
 old2=$(sed -n -e '/"version" *:/'"$sub"'' nodejs/package.json)
@@ -52,6 +56,7 @@ popd
 
 if [[ "$1" == "+" ]]; then
     git commit -m "Update version to $new" "$python_metadata" nodejs/package.json
+    git push "$remote" HEAD
 fi
 git tag -a v"$new" -m "Release version $new"
-git push origin v"$new"
+git push "$remote" v"$new"
