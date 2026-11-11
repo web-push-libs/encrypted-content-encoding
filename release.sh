@@ -25,6 +25,7 @@ case "$1" in
         sub='s/\(["'"'"']\)'"$old1"'["'"'"']/\1'"$new"'\1/'
         sed -i~ -e '/version *=/'"$sub" "$python_metadata"
         sed -i~ -e '/"version" *:/'"$sub" nodejs/package.json
+        (cd nodejs && npm install --package-lock-only --ignore-scripts >/dev/null)
         ;;
 
     =)
@@ -55,7 +56,7 @@ npm publish
 popd
 
 if [[ "$1" == "+" ]]; then
-    git commit -m "Update version to $new" "$python_metadata" nodejs/package.json
+    git commit -m "Update version to $new" "$python_metadata" nodejs/package.json nodejs/package-lock.json
     git push "$remote" HEAD
 fi
 git tag -a v"$new" -m "Release version $new"
