@@ -10,11 +10,11 @@ Use
 .. code-block:: python
 
     import http_ece
-    import os, base64
+    from secrets import token_bytes
 
-    key = os.urandom(16)
-    salt = os.urandom(16)
-    data = os.urandom(100)
+    key = token_bytes(16)
+    salt = token_bytes(16)
+    data = token_bytes(100)
 
     encrypted = http_ece.encrypt(data, salt=salt, key=key)
     decrypted = http_ece.decrypt(encrypted, salt=salt, key=key)

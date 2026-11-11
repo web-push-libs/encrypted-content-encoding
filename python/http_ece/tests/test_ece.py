@@ -1,9 +1,9 @@
 import base64
 import json
-import os
 import struct
 import unittest
 from pathlib import Path
+from secrets import token_bytes
 
 import pytest
 from cryptography.hazmat.backends import default_backend
@@ -55,8 +55,8 @@ class TestEce(unittest.TestCase):
         self.dh = self.private_key.public_key().public_bytes(
             Encoding.X962, PublicFormat.UncompressedPoint
         )
-        self.m_key = os.urandom(16)
-        self.m_salt = os.urandom(16)
+        self.m_key = token_bytes(16)
+        self.m_salt = token_bytes(16)
 
     def test_derive_key_invalid_mode(self):
         with pytest.raises(ECEException, match="unknown 'mode' specified: invalid"):
@@ -125,13 +125,13 @@ class TestEce(unittest.TestCase):
 
     def test_iv_bad_counter(self):
         with pytest.raises(ECEException, match="Counter too big"):
-            ece.iv(os.urandom(8), pow(2, 64) + 1)
+            ece.iv(token_bytes(8), pow(2, 64) + 1)
 
 
 class TestEceChecking(unittest.TestCase):
     def setUp(self):
-        self.m_key = os.urandom(16)
-        self.m_input = os.urandom(5)
+        self.m_key = token_bytes(16)
+        self.m_input = token_bytes(5)
         # This header is specific to the padding tests, but can be used
         # elsewhere
         self.m_header = b"\xaa\xd2\x05}3S\xb7\xff7\xbd\xe4*\xe1\xd5\x0f\xda"
@@ -147,7 +147,7 @@ class TestEceChecking(unittest.TestCase):
             )
 
     def test_decrypt_small_rs(self):
-        header = os.urandom(16) + struct.pack("!L", 2) + b"\0"
+        header = token_bytes(16) + struct.pack("!L", 2) + b"\0"
         with pytest.raises(ECEException, match="Record size too small"):
             ece.decrypt(
                 header + self.m_input,
@@ -175,7 +175,7 @@ class TestEceChecking(unittest.TestCase):
     def test_decrypt_bad_header(self):
         with pytest.raises(ECEException, match="Could not parse the content header"):
             ece.decrypt(
-                os.urandom(4),
+                token_bytes(4),
                 version="aes128gcm",
                 key=self.m_key,
             )
@@ -186,7 +186,7 @@ class TestEceChecking(unittest.TestCase):
                 self.m_input,
                 version="aes128gcm",
                 key=self.m_key,
-                keyid=b64e(os.urandom(192)),  # 256 bytes
+                keyid=b64e(token_bytes(192)),  # 256 bytes
             )
 
     def test_overlong_padding(self):
@@ -196,7 +196,7 @@ class TestEceChecking(unittest.TestCase):
                 b"\xe5\xd6\x94\xb7e\xf0\xcd\x15\x9b(\x01\xa5",
                 version="aes128gcm",
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
-                keyid=b64e(os.urandom(192)),  # 256 bytes
+                keyid=b64e(token_bytes(192)),  # 256 bytes
             )
 
     def test_bad_early_delimiter(self):
@@ -209,7 +209,7 @@ class TestEceChecking(unittest.TestCase):
                 b"\xef\x0cg\x1b\xe0\x14I~\xdc",
                 version="aes128gcm",
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
-                keyid=b64e(os.urandom(192)),  # 256 bytes
+                keyid=b64e(token_bytes(192)),  # 256 bytes
             )
 
     def test_bad_final_delimiter(self):
@@ -219,7 +219,7 @@ class TestEceChecking(unittest.TestCase):
                 b"\xe4P\x1b\x8dI\xdb\xc6y#MG\xc2W\x16",
                 version="aes128gcm",
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
-                keyid=b64e(os.urandom(192)),  # 256 bytes
+                keyid=b64e(token_bytes(192)),  # 256 bytes
             )
 
     def test_damage(self):
@@ -229,7 +229,7 @@ class TestEceChecking(unittest.TestCase):
                 b"\xe0\xd6.K\xe5\xf9]%\xe3\x86q\xe0}",
                 version="aes128gcm",
                 key=b"d\xc7\x0ed\xa7%U\x14Q\xf2\x08\xdf\xba\xa0\xb9r",
-                keyid=b64e(os.urandom(192)),  # 256 bytes
+                keyid=b64e(token_bytes(192)),  # 256 bytes
             )
 
 
@@ -250,8 +250,8 @@ class TestEceIntegration(unittest.TestCase):
         return 18
 
     def _generate_input(self, minLen=0):
-        length = struct.unpack("!B", os.urandom(1))[0] + minLen
-        return os.urandom(length)
+        length = struct.unpack("!B", token_bytes(1))[0] + minLen
+        return token_bytes(length)
 
     def encrypt_decrypt(self, input, encrypt_params, decrypt_params=None, version=None):
         """Run and encrypt/decrypt cycle on some test data
@@ -271,7 +271,7 @@ class TestEceIntegration(unittest.TestCase):
         if "key" in encrypt_params:
             logbuf("Key", encrypt_params["key"])
         if version != "aes128gcm":
-            salt = os.urandom(16)
+            salt = token_bytes(16)
             decrypt_rs_default = 4096
         else:
             salt = None
@@ -307,17 +307,17 @@ class TestEceIntegration(unittest.TestCase):
 
     def use_explicit_key(self, version=None):
         params = {
-            "key": os.urandom(16),
+            "key": token_bytes(16),
         }
         self.encrypt_decrypt(self._generate_input(), params, version=version)
 
     def auth_secret(self, version):
-        params = {"key": os.urandom(16), "auth_secret": os.urandom(16)}
+        params = {"key": token_bytes(16), "auth_secret": token_bytes(16)}
         self.encrypt_decrypt(self._generate_input(), params, version=version)
 
     def exactly_one_record(self, version=None):
         input = self._generate_input(1)
-        params = {"key": os.urandom(16), "rs": len(input) + self._rsoverhead(version)}
+        params = {"key": token_bytes(16), "rs": len(input) + self._rsoverhead(version)}
         self.encrypt_decrypt(input, params, version=version)
 
     def detect_truncation(self, version):
@@ -325,8 +325,8 @@ class TestEceIntegration(unittest.TestCase):
             return
 
         input = self._generate_input(2)
-        key = os.urandom(16)
-        salt = os.urandom(16)
+        key = token_bytes(16)
+        salt = token_bytes(16)
 
         rs = len(input) + self._rsoverhead(version) - 1
         encrypted = ece.encrypt(input, salt=salt, key=key, rs=rs, version=version)
@@ -370,7 +370,7 @@ class TestEceIntegration(unittest.TestCase):
 
         logec("sender", ephemeral_key)
 
-        auth_secret = os.urandom(16)
+        auth_secret = token_bytes(16)
 
         if version != "aes128gcm":
             decrypt_dh = pubbytes(ephemeral_key)
