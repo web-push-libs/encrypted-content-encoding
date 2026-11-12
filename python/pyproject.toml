@@ -6,29 +6,35 @@ build-backend = "setuptools.build_meta"
 name = "http_ece"
 version = "1.2.1"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Martin Thomson", email = "martin.thomson@gmail.com" }]
 keywords = ["crypto http"]
 classifiers = [
     "Development Status :: 4 - Beta",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
 ]
 description = "Encrypted Content Encoding for HTTP"
 readme = { file = "README.rst", content-type = "text/x-rst" }
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = ["cryptography>=46.0.1"]
 
-[project.optional-dependencies]
-dev = [
-    "black>=26.3.1",
-    "pytest",
+[dependency-groups]
+lint = [
+    "ruff==0.17.4",
+]
+test = [
+    "pytest>=9",
     "pytest-cov",
-    "ruff==0.14.10",
-    "tox",
+    "tox>=4.22",
     "tox-gh",
+]
+dev = [
+    { include-group = "lint" },
+    { include-group = "test" },
 ]
 
 [project.urls]
@@ -52,3 +58,26 @@ lint.select = ["A", "F", "FURB", "I", "PERF", "PT", "PTH", "RUF", "S", "UP"]
 
 [tool.setuptools]
 packages = ["http_ece"]
+
+[tool.tox]
+env_list = [
+    "py311",
+    "py312",
+    "py313",
+    "py314",
+    "py315",
+]
+
+[tool.tox.env_run_base]
+description = "run tests with pytest under {base_python}"
+dependency_groups = ["test"]
+commands = [
+    ["pytest", "{posargs}"],
+]
+
+[tool.tox.gh.python]
+"3.11" = ["py311"]
+"3.12" = ["py312"]
+"3.13" = ["py313"]
+"3.14" = ["py314"]
+"3.15" = ["py315"]
