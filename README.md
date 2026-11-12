@@ -1,4 +1,4 @@
-# Encryped Content-Encoding for HTTP
+# Encrypted Content-Encoding for HTTP
 
 nodejs and python implementations are available.
 
