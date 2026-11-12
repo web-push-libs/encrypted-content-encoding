@@ -30,7 +30,6 @@ def logbuf(msg, buf):
     logmsg(msg + ": [" + str(len(buf)) + "]")
     for i in list(range(0, len(buf), 48)):
         logmsg("    " + repr(buf[i : i + 48]))
-    return
 
 
 def b64e(arg):
