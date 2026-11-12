@@ -44,7 +44,7 @@ def derive_key(
     :type key: str
     :param private_key: DH private key
     :type key: object
-    :param dh: Diffie Helman public key value
+    :param dh: Diffie-Hellman public key value
     :type dh: str
     :param keyid: key identifier label
     :type keyid: str
@@ -194,7 +194,7 @@ def decrypt(
     :type key: object
     :param keyid: Internal key identifier for private key info
     :type keyid: str
-    :param dh: Remote Diffie Hellman sequence (omit for aes128gcm)
+    :param dh: Remote Diffie-Hellman sequence (omit for aes128gcm)
     :type dh: str
     :param rs: Record size
     :type rs: int
@@ -333,7 +333,7 @@ def encrypt(
     :type key: object
     :param keyid: Internal key identifier for private key info
     :type keyid: str
-    :param dh: Remote Diffie Hellman sequence
+    :param dh: Remote Diffie-Hellman sequence
     :type dh: str
     :param rs: Record size
     :type rs: int
